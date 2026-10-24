@@ -5,8 +5,8 @@ ESP32-C3 with a 1.28" round touch display (Guition ESP32-2424S012: GC9A01 + CST8
 Status and controls are on the display, on a small web page, and in Home Assistant over MQTT.
 
 The Deco mesh has no local API for this feature. The Deco app does it over an SSH tunnel into the master Deco, speaking a
-binary protocol ("TMP") to a service on the Deco's loopback interface; this project reproduces that. Protocol notes
-are kept separately from this repo.
+binary protocol ("TMP") to a service on the Deco's loopback interface; this project reproduces that. The protocol notes and a
+Python reference implementation are in [Zoogara/deco-network-optimize](https://github.com/Zoogara/deco-network-optimize).
 
 ## Features
 - Scan / optimize via SSH direct-tcpip to `127.0.0.1:20002` on the Deco (libssh2 on mbedTLS; the Deco's 512-bit RSA host key
@@ -71,4 +71,7 @@ Set **Setup-reset button GPIO** (`CONFIG_DECO_RESET_BUTTON_GPIO`, `-1` to disabl
 - Free RAM is tight with the screen: the SSH handshake briefly needs about 78 KB of the roughly 120 KB that is free when idle, which is why the
   web server is HTTP only. A headless build has roughly 66 KB more.
 - The Deco's own scan briefly drops Wi-Fi clients, including this device, so Home Assistant entities flicker "unavailable" during scans.
-- No licence has been chosen yet.
+
+## Licence
+MIT, the same as the protocol notes and Python example: see [LICENSE](LICENSE). Third-party components keep their own licences
+(libssh2: BSD-3-Clause; LVGL and cJSON: MIT; ESP-IDF, mbedTLS and mDNS: Apache-2.0).
