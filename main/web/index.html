@@ -36,7 +36,7 @@ input[type=text],input[type=password],input[type=time]{width:100%;padding:9px;fo
  <div class=dim style="margin-top:8px">SSH host key: <code id=hostkey>not pinned yet</code></div>
  <div class=row style="margin-top:12px"><button id=save_deco>Save</button><button class=sec id=repin>Re-pin host key</button></div><div class=msg id=m_deco></div></section>
 <section><h2>MQTT / Home Assistant</h2>
- <label>Broker address</label><input type=text id=mqtt_uri autocapitalize=none>
+ <label>Broker address</label><input type=text id=mqtt_uri autocapitalize=none placeholder="mqtt://homeassistant.local:1883">
  <label>Username <span class=dim>(empty disables MQTT)</span></label><input type=text id=mqtt_user autocapitalize=none>
  <label>Password</label><input type=password id=mqtt_pass autocomplete=new-password>
  <div class=row style="margin-top:12px"><button id=save_mqtt>Save and restart</button></div><div class=msg id=m_mqtt></div></section>

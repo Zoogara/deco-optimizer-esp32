@@ -15,7 +15,6 @@ static void set_defaults(void)
     memset(&g_cfg, 0, sizeof g_cfg);
     g_cfg.magic = SETTINGS_MAGIC;
     strcpy(g_cfg.deco_host, "192.168.0.1");
-    strcpy(g_cfg.mqtt_uri, "mqtt://192.168.0.100:1883");
     g_cfg.sched_en = true;
     g_cfg.sched_h = SCHEDULE_DEFAULT_HOUR;
     g_cfg.sched_m = SCHEDULE_DEFAULT_MINUTE;
