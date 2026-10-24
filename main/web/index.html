@@ -1,0 +1,98 @@
+<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Deco Optimizer</title>
+<style>
+:root{--bg:#111;--card:#1b1b1b;--line:#333;--tx:#eee;--dim:#999;--ok:#4cc364;--warn:#f0b429;--bad:#ff6b6b;--acc:#2d7ff9}
+@media(prefers-color-scheme:light){:root{--bg:#f3f3f3;--card:#fff;--line:#ddd;--tx:#111;--dim:#666}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:14px 16px 40px}h1{font-size:1.25em;margin:6px 0 12px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+h2{font-size:.8em;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:0 0 10px}
+.big{font-size:1.9em;font-weight:600}.dim{color:var(--dim)}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.acc{color:var(--acc)}
+button{padding:10px 16px;font-size:1em;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer}
+button.sec{background:transparent;border:1px solid var(--line);color:var(--tx)}button:disabled{opacity:.45}
+label{display:block;margin:10px 0 3px;color:var(--dim);font-size:.85em}
+input[type=text],input[type=password],input[type=time]{width:100%;padding:9px;font-size:1em;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
+.sw{display:flex;align-items:center;gap:8px;margin:8px 0}.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:.92em}
+.kv span:nth-child(odd){color:var(--dim)}table{width:100%;border-collapse:collapse;font-size:.92em}td{padding:5px 4px;border-top:1px solid var(--line)}
+.msg{margin-top:10px;font-size:.9em}.danger{border-color:var(--bad)}.danger h2{color:var(--bad)}button.bad{background:var(--bad);color:#fff}code{font-size:.85em;word-break:break-all}
+</style></head><body><main>
+<h1>Deco Optimizer</h1>
+<section><h2>Status</h2>
+ <div class="big" id=state>-</div><div class=dim id=sub></div>
+ <div class=row style="margin-top:12px"><button id=run>Run now</button>
+  <label class=sw style="margin:0"><input type=checkbox id=opt> <span id=optl>Optimise mode</span></label></div>
+ <div class="dim msg" id=modehint></div></section>
+<section><h2>Connection</h2><div class=kv id=conn></div></section>
+<section><h2>History</h2><table id=hist></table></section>
+<section><h2>Schedule</h2>
+ <label class=sw><input type=checkbox id=sched_en> Run every day</label>
+ <label>Time (device local time)</label><input type=time id=sched_t>
+ <div class=row style="margin-top:12px"><button id=save_sched>Save schedule</button></div><div class=msg id=m_sched></div></section>
+<section><h2>Deco</h2>
+ <label>Deco address</label><input type=text id=deco_host autocapitalize=none>
+ <label>TP-Link account email</label><input type=text id=deco_email autocapitalize=none>
+ <label>TP-Link account password</label><input type=password id=deco_pass autocomplete=new-password>
+ <div class=dim style="margin-top:8px">SSH host key: <code id=hostkey>not pinned yet</code></div>
+ <div class=row style="margin-top:12px"><button id=save_deco>Save</button><button class=sec id=repin>Re-pin host key</button></div><div class=msg id=m_deco></div></section>
+<section><h2>MQTT / Home Assistant</h2>
+ <label>Broker address</label><input type=text id=mqtt_uri autocapitalize=none>
+ <label>Username <span class=dim>(empty disables MQTT)</span></label><input type=text id=mqtt_user autocapitalize=none>
+ <label>Password</label><input type=password id=mqtt_pass autocomplete=new-password>
+ <div class=row style="margin-top:12px"><button id=save_mqtt>Save and restart</button></div><div class=msg id=m_mqtt></div></section>
+<section><h2>Wi-Fi</h2>
+ <label>Network</label><input type=text id=wifi_ssid autocapitalize=none>
+ <label>Password</label><input type=password id=wifi_pass autocomplete=new-password>
+ <div class=row style="margin-top:12px"><button id=save_wifi>Save and restart</button></div>
+ <div class="dim msg">If the new details never connect, the device clears them after 90 seconds and returns to setup mode.</div><div class=msg id=m_wifi></div></section>
+<section><h2>Security and device</h2>
+ <label>New admin password <span class=dim>(8+ characters)</span></label><input type=password id=admin_pass autocomplete=new-password>
+ <div class=row style="margin-top:12px"><button id=save_admin>Change password</button><button class=sec id=reboot>Restart device</button></div><div class=msg id=m_admin></div>
+ <div class="dim msg">Secrets are stored encrypted on the device and are never shown here; leave a password field empty to keep the current one. This page uses plain HTTP, so use it on your home network only.</div></section>
+<section class=danger><h2>Erase all settings</h2>
+ <p style="margin:0 0 10px"><b class=bad>This cannot be undone.</b> It permanently deletes everything stored on this device:
+ the Wi-Fi details, the TP-Link account login, the MQTT login, the pinned Deco host key, the schedule, the admin password and the run history.</p>
+ <p style="margin:0 0 10px">The device then restarts into <b>setup mode</b> and does nothing useful until you run setup again from a phone and re-enter every setting.
+ While it is unconfigured the Home Assistant entities show as unavailable, and this page is unreachable until setup is done.</p>
+ <p class=dim style="margin:0 0 12px">The hardware encryption key burned into the chip is not affected; it is not needed to be restored.</p>
+ <button class=bad id=erase>Erase all settings...</button><div class=msg id=m_erase></div></section>
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,body){const o=body===undefined&&!path.startsWith('/api/run')&&!/(repin|reboot)$/.test(path)?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})};
+ const r=await fetch(path,o);if(r.status===401){location.reload();throw 0}if(!r.ok)throw new Error(await r.text());return r.json()}
+const fmt=ts=>ts>1.7e9?new Date(ts*1000).toLocaleString([], {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'time not set';
+const cls=v=>v==='error'?'bad':v==='optimizable'?'warn':'ok';
+function say(id,t,c){const e=$(id);e.textContent=t;e.className='msg '+(c||'')}
+function dur(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+'d ':'')+(h?h+'h ':'')+m+'m'}
+async function refresh(){try{const s=await api('/api/status');
+ const busy=s.busy,st=s.state;$('state').textContent=st;$('state').className='big '+(busy?'acc':cls(st));
+ const h=s.history[0];$('sub').textContent=busy?'running...':(h?`${fmt(h.ts)}  ·  ${h.dur}s  ·  ${h.flags&1?'optimise':'report'}${h.flags&4?' (startup)':h.flags&2?' (scheduled)':''}`:'no runs yet');
+ $('run').disabled=busy;if(document.activeElement!==$('opt'))$('opt').checked=s.optimize;
+ $('optl').textContent=s.optimize?'Optimise mode':'Report-only mode';
+ $('modehint').textContent=s.optimize?'Scheduled and manual runs will APPLY changes to the mesh (brief Wi-Fi interruption).':'Runs only scan and report; nothing is changed. A startup scan is always report-only.';
+ const w=s.wifi||{};$('conn').innerHTML=`<span>Wi-Fi</span><span>${w.ssid||'-'} ${w.rssi!==undefined?w.rssi+' dBm, ch '+w.channel:''}</span><span>Node</span><span>${w.bssid||'-'}</span><span>Address</span><span>${w.ip||'-'}</span>`+
+ `<span>MQTT</span><span>${!s.mqtt.enabled?'disabled':s.mqtt.connected?'connected':'not connected'}</span><span>Next run</span><span>${s.sched_en&&s.next?fmt(s.next):'schedule off'}</span>`+
+ `<span>Free memory</span><span>${(s.sys.heap/1024).toFixed(0)} KB (low ${(s.sys.min_heap/1024).toFixed(0)} KB, largest block ${(s.sys.largest/1024).toFixed(0)} KB)</span><span>Uptime</span><span>${dur(s.sys.uptime)}</span>`;
+ $('hist').innerHTML=s.history.map(x=>`<tr><td>${fmt(x.ts)}</td><td class=${cls(x.v)}>${x.v}</td><td>${x.dur}s</td><td class=dim>${x.flags&1?'optimise':'report'}${x.flags&4?' · startup':x.flags&2?' · schedule':''}</td></tr>`).join('')||'<tr><td class=dim>no runs yet</td></tr>'}catch(e){}}
+async function loadCfg(){const c=await api('/api/config');
+ for(const k of['deco_host','deco_email','mqtt_uri','mqtt_user','wifi_ssid'])$(k).value=c[k]||'';
+ $('sched_en').checked=c.sched_en;$('sched_t').value=String(c.sched_h).padStart(2,'0')+':'+String(c.sched_m).padStart(2,'0');
+ for(const k of['deco_pass','mqtt_pass','wifi_pass'])$(k).placeholder=c[k+'_set']?'(set - leave empty to keep)':'(not set)';
+ $('hostkey').textContent=c.hostkey_set?c.hostkey:'not pinned yet - will pin on the next connection'}
+async function save(msgid,body,restart){try{say(msgid,'saving...');const r=await api('/api/config',Object.assign(body,restart?{restart:true}:{}));
+ say(msgid,restart?'Saved. Restarting - the page will reconnect in about 20 seconds...':'Saved.','ok');
+ if(restart)setTimeout(()=>location.reload(),20000);else loadCfg()}catch(e){say(msgid,'Failed: '+(e.message||e),'bad')}}
+$('run').onclick=async()=>{await api('/api/run',{});setTimeout(refresh,400)};
+$('opt').onchange=async e=>{await api('/api/mode',{optimize:e.target.checked});refresh()};
+$('save_sched').onclick=()=>{const[t1,t2]=$('sched_t').value.split(':');save('m_sched',{sched_en:$('sched_en').checked,sched_h:+t1,sched_m:+t2})};
+$('save_deco').onclick=()=>save('m_deco',{deco_host:$('deco_host').value.trim(),deco_email:$('deco_email').value.trim(),deco_pass:$('deco_pass').value}).then(()=>$('deco_pass').value='');
+$('repin').onclick=async()=>{if(confirm('Trust whatever SSH host key the Deco presents next time?')){await api('/api/repin',{});say('m_deco','Will re-pin on the next connection.','ok');loadCfg()}};
+$('save_mqtt').onclick=()=>save('m_mqtt',{mqtt_uri:$('mqtt_uri').value.trim(),mqtt_user:$('mqtt_user').value.trim(),mqtt_pass:$('mqtt_pass').value},true);
+$('save_wifi').onclick=()=>{if(confirm('Apply new Wi-Fi details and restart?'))save('m_wifi',{wifi_ssid:$('wifi_ssid').value.trim(),wifi_pass:$('wifi_pass').value},true)};
+$('save_admin').onclick=()=>{const p=$('admin_pass').value;if(p.length<8){say('m_admin','At least 8 characters.','bad');return}save('m_admin',{admin_pass:p}).then(()=>{$('admin_pass').value='';say('m_admin','Password changed - you will be asked to sign in again.','ok');setTimeout(()=>location.reload(),1500)})};
+$('erase').onclick=async()=>{const t=prompt('This permanently erases ALL settings, passwords and history, and restarts the device into setup mode.\n\nType ERASE (capitals) to confirm:');
+ if(t!=='ERASE'){say('m_erase','Cancelled - nothing was changed.');return}
+ try{await api('/api/erase',{confirm:'ERASE'});say('m_erase','Erased. The device is restarting into setup mode - join its Deco-Setup Wi-Fi from your phone to set it up again.','bad')}catch(e){say('m_erase','Failed: '+(e.message||e),'bad')}};
+$('reboot').onclick=async()=>{if(confirm('Restart the device?')){await api('/api/reboot',{});say('m_admin','Restarting...','ok');setTimeout(()=>location.reload(),20000)}};
+loadCfg();refresh();setInterval(refresh,3000);
+</script></main></body></html>
