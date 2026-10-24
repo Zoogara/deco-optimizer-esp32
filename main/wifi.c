@@ -50,9 +50,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         s_retries = 0;
         xEventGroupSetBits(s_eg, GOT_IP);
         if (!g_cfg.wifi_verified) { g_cfg.wifi_verified = true; settings_save(); }   // credentials proved good
+        const ip_event_got_ip_t *got = data;
         wifi_ap_record_t ap;
         if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
-            ESP_LOGI(TAG, "got ip, node " MACSTR " ch %d rssi %d", MAC2STR(ap.bssid), ap.primary, ap.rssi);
+            ESP_LOGI(TAG, "got ip " IPSTR ", node " MACSTR " ch %d rssi %d", IP2STR(&got->ip_info.ip), MAC2STR(ap.bssid), ap.primary, ap.rssi);
     }
 }
 
