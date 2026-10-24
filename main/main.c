@@ -98,7 +98,8 @@ static time_t next_schedule(time_t from)
 
 // Holding BOOT (GPIO9) for 5 s while running clears the Wi-Fi details and restarts into setup mode.
 // (Holding it *during reset* is what enters the ROM download mode, so this only acts once running.)
-#define BOOT_PIN 9
+#if CONFIG_DECO_RESET_BUTTON_GPIO >= 0
+#define BOOT_PIN CONFIG_DECO_RESET_BUTTON_GPIO
 static void boot_button_task(void *arg)
 {
     gpio_config_t io = {.pin_bit_mask = 1ULL << BOOT_PIN, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
@@ -115,6 +116,8 @@ static void boot_button_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
+#endif
 
 // Credentials entered in setup that never produce an IP are cleared, so a typo cannot strand the device.
 // Established (verified) credentials are never cleared automatically.
@@ -198,7 +201,9 @@ void app_main(void)
     settings_load();
     setenv("TZ", DECO_TZ, 1); tzset();
     display_init();
+#if CONFIG_DECO_RESET_BUTTON_GPIO >= 0
     xTaskCreate(boot_button_task, "boot_btn", 2048, NULL, 3, NULL);
+#endif
     if (!settings_wifi_configured()) {      // first run, or BOOT-hold recovery
         provision_start();
         return;

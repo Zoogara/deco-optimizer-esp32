@@ -1,0 +1,5 @@
+# Encrypted NVS: the key is derived from an HMAC key generated inside the chip and burned to eFuse
+# BLOCK_KEY5 on first boot (irreversible). Needs the HMAC peripheral.
+CONFIG_NVS_ENCRYPTION=y
+CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y
+CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID=5

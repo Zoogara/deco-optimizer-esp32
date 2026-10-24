@@ -3,4 +3,4 @@ managed_components/
 sdkconfig
 sdkconfig.old
 dependencies.lock
-main/secrets.h
+build-*/

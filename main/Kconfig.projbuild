@@ -1,0 +1,30 @@
+menu "Deco Optimizer"
+
+    config DECO_HEADLESS
+        bool "Headless build (no display, touch or LVGL)"
+        default n
+        help
+            Builds without the screen, touch input and LVGL, replacing them with no-op stubs. Status and control are then
+            on the web page, over MQTT/Home Assistant and in the serial log only. This frees roughly 50 KB of RAM.
+            Requires DECO_SETUP_AP_PASSWORD, because a headless device has no screen to show a setup password on.
+
+    config DECO_SETUP_AP_PASSWORD
+        string "Setup access point password (8-63 characters)"
+        default ""
+        help
+            Password for the first-run setup Wi-Fi network (Deco-Setup-XXXX). It only guards the setup window, which
+            is open until the Wi-Fi details are entered, so choose something other than the default you may have seen
+            elsewhere. Required for headless builds. On builds with a screen, leave it empty to use a random
+            password shown on the display (as a QR code and as text).
+
+    config DECO_RESET_BUTTON_GPIO
+        int "GPIO of the setup-reset button (-1 to disable)"
+        range -1 48
+        default 9 if IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32C6
+        default 0
+        help
+            Holding this pin low for 5 seconds while the firmware is running clears the Wi-Fi details and restarts into
+            setup mode. This is normally the board's BOOT button. Holding it during reset instead enters the ROM
+            download mode, so it only acts once the firmware is running. Set -1 on boards without a button.
+
+endmenu

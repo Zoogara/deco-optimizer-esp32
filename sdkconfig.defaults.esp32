@@ -1,0 +1,2 @@
+# Classic ESP32 has no HMAC peripheral, so the HMAC NVS-encryption scheme is unavailable: NVS is NOT encrypted
+# unless you enable flash encryption and the flash-encryption scheme (nvs_keys partition). Secrets are then plaintext in flash.

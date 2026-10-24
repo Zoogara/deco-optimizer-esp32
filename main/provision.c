@@ -18,6 +18,12 @@
 #include "display.h"
 
 static const char *TAG = "setup";
+
+// A headless device has no screen to show a random setup password on, so the build must supply one.
+#if CONFIG_DECO_HEADLESS
+_Static_assert(sizeof(CONFIG_DECO_SETUP_AP_PASSWORD) >= 9, "headless builds need DECO_SETUP_AP_PASSWORD (8-63 characters)");
+#endif
+_Static_assert(sizeof(CONFIG_DECO_SETUP_AP_PASSWORD) <= 64, "DECO_SETUP_AP_PASSWORD is longer than 63 characters");
 #define AP_IP "192.168.4.1"
 #define MAX_NETS 15
 
@@ -174,11 +180,15 @@ void provision_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
     uint8_t mac[6]; esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-    char ssid[24], pass[9];
+    char ssid[24], pass[65];
     snprintf(ssid, sizeof ssid, "Deco-Setup-%02X%02X", mac[4], mac[5]);
     static const char alphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";    // no look-alike characters
-    for (int i = 0; i < 8; i++) pass[i] = alphabet[esp_random() % (sizeof alphabet - 1)];
-    pass[8] = 0;
+    if (CONFIG_DECO_SETUP_AP_PASSWORD[0]) {
+        strlcpy(pass, CONFIG_DECO_SETUP_AP_PASSWORD, sizeof pass);
+    } else {
+        for (int i = 0; i < 8; i++) pass[i] = alphabet[esp_random() % (sizeof alphabet - 1)];
+        pass[8] = 0;
+    }
 
     wifi_config_t ap = {0};
     strlcpy((char *)ap.ap.ssid, ssid, sizeof ap.ap.ssid);
