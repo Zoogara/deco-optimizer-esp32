@@ -21,6 +21,7 @@
 #include "ui.h"
 #include "mqtt.h"
 #include "web.h"
+#include "screensaver.h"
 #include "appstate.h"
 #include "settings.h"
 #include "provision.h"
@@ -64,6 +65,7 @@ static void worker_task(void *arg)
         if (xQueueReceive(s_cmds, &c, portMAX_DELAY) != pdTRUE) continue;
         if (s_busy) continue;
         s_busy = true; app_busy_set(true);
+        screensaver_wake();                // a run (scheduled, manual, web or MQTT) lights the screen
         bool optimize = (c == CMD_RUN_STARTUP) ? false : g_cfg.optimize;   // a reboot must never optimise
         progress("checking wifi");
         wifi_check_link();      // moves off a mesh node that is not passing traffic
@@ -80,6 +82,7 @@ static void worker_task(void *arg)
         history_add(&e);
         app_state_set(r.verdict == DECO_ERROR ? "error" : deco_verdict_str(r.verdict));
         ui_set_result(r.verdict, e.ts, r.duration_s, r.detail);
+        screensaver_wake();                // keep the result on screen for a full timeout
         mqtt_publish_result(&e, r.detail);
         ESP_LOGI(TAG, "[heap] free=%u min=%u largest=%u", (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         s_busy = false; app_busy_set(false);

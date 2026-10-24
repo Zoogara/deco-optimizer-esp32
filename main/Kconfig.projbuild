@@ -27,4 +27,14 @@ menu "Deco Optimizer"
             setup mode. This is normally the board's BOOT button. Holding it during reset instead enters the ROM
             download mode, so it only acts once the firmware is running. Set -1 on boards without a button.
 
+    config DECO_SCREENSAVER_TIMEOUT_S
+        int "Screensaver timeout in seconds (0 disables)"
+        range 0 86400
+        default 300
+        depends on !DECO_HEADLESS
+        help
+            After this long without a touch the screen shows a short burst of "snow" and the backlight turns off.
+            A touch wakes it (the wake touch is not passed to the interface), and so does every scan or optimise run.
+            Not used during first-run setup, so the QR code stays on screen. Headless builds have no screen.
+
 endmenu

@@ -4,6 +4,8 @@
 #include "history.h"
 #include "deco.h"
 
+void screensaver_init(void) {}   /* the host renderer has no idle timer */
+
 const char *deco_verdict_str(deco_verdict_t v)
 {
     switch (v) {

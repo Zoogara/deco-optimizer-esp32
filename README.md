@@ -13,6 +13,8 @@ Python reference implementation are in [Zoogara/deco-network-optimize](https://g
   is pinned on first use).
 - Touch UI: status page, swipeable history, Run now, report-only / optimise switch.
 - Daily schedule (SNTP, POSIX timezone in `main/config.h`). A report-only scan always runs once after boot, and a reboot never optimises.
+- Screensaver: after 5 minutes without a touch the screen shows a short burst of "snow" and the backlight turns off. A touch wakes it (that touch is
+  not passed on to the buttons underneath), and so does every scan or optimise run, scheduled or not. Set `CONFIG_DECO_SCREENSAVER_TIMEOUT_S` to change the time, or `0` to disable.
 - Home Assistant MQTT discovery (state, last/next scan, optimise switch, run button), with availability.
 - Wi-Fi tuned for a multi-node mesh: joins the strongest node, pings the gateway before each run and moves off a node
   that is not passing traffic.

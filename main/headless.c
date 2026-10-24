@@ -1,10 +1,13 @@
 // Stand-ins for the display and UI in a DECO_HEADLESS build. The rest of the firmware is unchanged.
 #include "display.h"
 #include "ui.h"
+#include "screensaver.h"
 #include "esp_log.h"
 
 static const char *TAG = "headless";
 
+void screensaver_init(void) {}
+void screensaver_wake(void) {}
 void display_init(void) {}
 void display_orient(bool swap_xy, bool mirror_x, bool mirror_y) {}
 void display_set_backlight(int percent) {}

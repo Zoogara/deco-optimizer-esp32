@@ -4,6 +4,7 @@
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 #include "history.h"
+#include "screensaver.h"
 
 static ui_callbacks_t s_cb;
 static lv_obj_t *s_verdict, *s_sub, *s_next, *s_run_btn, *s_run_lbl, *s_mode_sw, *s_mode_lbl, *s_hist;
@@ -104,6 +105,7 @@ void ui_init(const ui_callbacks_t *cb, bool optimize_initial)
     lv_obj_set_style_text_align(s_hist, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_recolor(s_hist, true);
     lv_obj_align(s_hist, LV_ALIGN_TOP_LEFT, 0, 24);
+    screensaver_init();
     lvgl_port_unlock();
     ui_refresh_history();
 }
