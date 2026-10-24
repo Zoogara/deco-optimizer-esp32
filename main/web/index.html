@@ -68,8 +68,8 @@ async function refresh(){try{const s=await api('/api/status');
  const busy=s.busy,st=s.state;$('state').textContent=st;$('state').className='big '+(busy?'acc':cls(st));
  const h=s.history[0];$('sub').textContent=busy?'running...':(h?`${fmt(h.ts)}  ·  ${h.dur}s  ·  ${h.flags&1?'optimise':'report'}${h.flags&4?' (startup)':h.flags&2?' (scheduled)':''}`:'no runs yet');
  $('run').disabled=busy;if(document.activeElement!==$('opt'))$('opt').checked=s.optimize;
- $('optl').textContent=s.optimize?'Optimise mode':'Report-only mode';
- $('modehint').textContent=s.optimize?'Scheduled and manual runs will APPLY changes to the mesh (brief Wi-Fi interruption).':'Runs only scan and report; nothing is changed. A startup scan is always report-only.';
+ 
+ $('modehint').textContent=s.optimize?'Optimise: scheduled and manual runs APPLY changes to the mesh (brief Wi-Fi interruption).':'Report only: runs scan and report, nothing is changed. A startup scan is always report-only.';
  const w=s.wifi||{};$('conn').innerHTML=`<span>Wi-Fi</span><span>${w.ssid||'-'} ${w.rssi!==undefined?w.rssi+' dBm, ch '+w.channel:''}</span><span>Node</span><span>${w.bssid||'-'}</span><span>Address</span><span>${w.ip||'-'}</span>`+
  `<span>MQTT</span><span>${!s.mqtt.enabled?'disabled':s.mqtt.connected?'connected':'not connected'}</span><span>Next run</span><span>${s.sched_en&&s.next?fmt(s.next):'schedule off'}</span>`+
  `<span>Free memory</span><span>${(s.sys.heap/1024).toFixed(0)} KB (low ${(s.sys.min_heap/1024).toFixed(0)} KB, largest block ${(s.sys.largest/1024).toFixed(0)} KB)</span><span>Uptime</span><span>${dur(s.sys.uptime)}</span>`;

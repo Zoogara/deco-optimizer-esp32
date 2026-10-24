@@ -173,17 +173,17 @@ void ui_show_setup(const char *ap_ssid, const char *ap_pass)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_t *title = make_label(scr, &lv_font_montserrat_14, lv_palette_main(LV_PALETTE_AMBER));
-    lv_label_set_text(title, "SETUP");
+    lv_label_set_text(title, "SCAN TO JOIN");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
-    lv_obj_t *qr = lv_qrcode_create(scr, 110, lv_color_black(), lv_color_white());
+    lv_obj_t *qr = lv_qrcode_create(scr, 96, lv_color_black(), lv_color_white());
     lv_qrcode_update(qr, wifi_uri, strlen(wifi_uri));
-    lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 34);
     lv_obj_set_style_border_color(qr, lv_color_white(), 0);
     lv_obj_set_style_border_width(qr, 5, 0);
     lv_obj_t *t = make_label(scr, &lv_font_montserrat_14, lv_color_white());
-    snprintf(buf, sizeof buf, "Scan to join, or join\n%s\npassword %s\nthen open 192.168.4.1", ap_ssid, ap_pass);
+    snprintf(buf, sizeof buf, "%s\npassword %s\nthen open 192.168.4.1", ap_ssid, ap_pass);   /* kept to 3 lines: a round screen is narrow near the bottom */
     lv_label_set_text(t, buf);
-    lv_obj_align(t, LV_ALIGN_BOTTOM_MID, 0, -22);
+    lv_obj_align(t, LV_ALIGN_BOTTOM_MID, 0, -40);
     lv_scr_load(scr);
     lvgl_port_unlock();
 }
