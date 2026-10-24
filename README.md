@@ -19,6 +19,76 @@ Python reference implementation are in [Zoogara/deco-network-optimize](https://g
 - First-run setup: the device starts its own access point (QR code on screen) and a captive portal asks for the Wi-Fi network and a
   web admin password. Everything else is set on the web page. Holding BOOT for 5 s while running re-enters setup.
 
+## Screenshots
+Generated from the real UI code and web page with **invented data** (see [tools/screenshots](tools/screenshots)); nothing here is from a real network.
+
+![The five device screens](docs/screenshots/overview.png)
+
+Left to right: status (optimal), status (optimizable), scanning, history, and the first-run setup screen. Swipe left on the status screen for the
+history; a `*` there marks a run made in optimise mode. The coloured word is the Deco's verdict from the last scan.
+
+<table><tr>
+<td><img src="docs/screenshots/status_optimise_mode.png" width="240" alt="Status screen with optimise mode on"><br>Optimise mode on</td>
+<td><img src="docs/screenshots/status_error.png" width="240" alt="Status screen showing an error"><br>An error, with its reason</td>
+<td><img src="docs/screenshots/history.png" width="240" alt="History screen"><br>History</td>
+</tr></table>
+
+The web page (dark and light follow the browser):
+
+<table><tr>
+<td><img src="docs/screenshots/web_page_top_dark.png" width="420" alt="Web page: status, connection, history, schedule (dark)"></td>
+<td><img src="docs/screenshots/web_page_top_light.png" width="420" alt="Web page: status, connection, history, schedule (light)"></td>
+</tr></table>
+
+Settings (below the schedule on the same page). Passwords are write-only: the fields show "set" and are never filled in.
+
+<img src="docs/screenshots/web_page_settings_dark.png" width="420" alt="Web page settings: Deco, MQTT, Wi-Fi, security and the erase section">
+
+<table><tr>
+<td><img src="docs/screenshots/web_status_running_dark.png" width="420" alt="Status while an optimise is running"><br>While an optimise is running</td>
+<td><img src="docs/screenshots/web_status_error_dark.png" width="420" alt="Status after a failed run"><br>After a failed run</td>
+</tr></table>
+
+The first-run setup page that a phone opens from the setup access point:
+
+<img src="docs/screenshots/web_setup_dark.png" width="320" alt="First-run setup page">
+
+## First-run setup
+A new device (or one whose Wi-Fi details were cleared) starts its own Wi-Fi network, **`Deco-Setup-XXXX`** (the last four hex digits come from the
+device's MAC address), and runs a captive portal that asks only for the Wi-Fi network and a web admin password. Everything else is entered afterwards on the web page.
+
+**With a screen**
+1. Power it up. The screen shows **SCAN TO JOIN**, a QR code, the network name and a random password.
+2. Scan the QR code with a phone camera to join, or join `Deco-Setup-XXXX` by hand with the password shown.
+3. The setup page opens by itself. If it does not, browse to `http://192.168.4.1`.
+4. Pick or type your Wi-Fi network, enter its password and choose an admin password (8+ characters), then **Save and restart**.
+
+**Headless** (no screen, so no QR code and no on-screen password)
+1. The setup network's password is the one you set in the build, `CONFIG_DECO_SETUP_AP_PASSWORD` (see [Headless build](#headless-build-no-screen)).
+2. Power it up and look for `Deco-Setup-XXXX` in your phone's Wi-Fi list. The serial log prints the exact name too (`SETUP MODE: join the Wi-Fi network ...`).
+3. Join it with the build password, then follow steps 3 and 4 above.
+
+**After saving**, the device restarts and joins your Wi-Fi. If the new details never produce a connection within 90 seconds it clears them and returns to setup, so a typo cannot lock you out.
+Then open `http://deco-optimizer.local/` (the first lookup can take about 5 seconds on macOS), or the device's address from your router's client list or, on a headless build, from the serial log.
+Sign in as `admin` with the password you chose, and enter the TP-Link account email and password, the Deco's address and, if you use it, the MQTT broker.
+
+**Back into setup later:** hold the reset button (the board's BOOT button by default, `CONFIG_DECO_RESET_BUTTON_GPIO`) for 5 seconds while the firmware is running. That clears only the Wi-Fi
+details. Or use **Erase all settings** on the web page, which wipes everything. A build with the button disabled (`-1`) can only be returned to setup from the web page or by reflashing.
+
+## Home Assistant
+With MQTT configured, one device, **Deco Optimizer**, appears through MQTT discovery (default prefix `homeassistant`):
+
+| Entity | What it is |
+|---|---|
+| Network optimisation (sensor) | `optimal`, `optimizable`, `optimized`, `error`, or live progress (`scanning`, `optimizing`, ...). Attributes: `duration_s`, `mode`, `trigger` (`manual`, `schedule`, `startup`), `detail`. |
+| Last scan, Next scheduled scan (sensors) | Timestamps. |
+| Optimise mode (switch) | Off = report only. |
+| Run scan now (button) | Starts a run in the current mode. |
+
+Topics are under `deco_optimizer/<id>/` (`state`, `attributes`, `last_run`, `next_run`, `mode`, `availability`; commands on `mode/set` with `ON`/`OFF` and `run/set` with `PRESS`),
+where `<id>` is the last three bytes of the MAC address in hex. Availability uses a retained last-will message, so entities show "unavailable" if the device drops off MQTT, which also
+happens briefly during a Deco scan (the scan disturbs Wi-Fi clients, this device included).
+
 ## Security notes
 - All settings and secrets (Wi-Fi, TP-Link login, MQTT login, admin password, pinned host key) are stored in one blob in an
   **encrypted NVS** partition. The key is derived from an HMAC key generated inside the chip and burned to eFuse BLOCK_KEY5
@@ -66,6 +136,7 @@ Set **Setup-reset button GPIO** (`CONFIG_DECO_RESET_BUTTON_GPIO`, `-1` to disabl
 ## Layout
 `main/deco.c` (SSH + TMP client), `tmp_proto.c` (framing), `wifi.c` (mesh-aware station), `settings.c` (encrypted config),
 `provision.c` (setup AP + portal), `web.c` + `web/index.html`, `mqtt.c`, `ui.c`, `display.c`, `history.c`.
+`tools/screenshots` renders the screenshots above on a computer.
 
 ## Known limitations
 - Free RAM is tight with the screen: the SSH handshake briefly needs about 78 KB of the roughly 120 KB that is free when idle, which is why the

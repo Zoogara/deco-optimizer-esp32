@@ -4,3 +4,7 @@ sdkconfig
 sdkconfig.old
 dependencies.lock
 build-*/
+tools/screenshots/build/
+tools/screenshots/out/
+tools/screenshots/render
+tools/screenshots/shim/sdkconfig.h
