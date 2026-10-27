@@ -287,6 +287,7 @@ void app_main(void)
     if (have_last) { ui_set_result(last.verdict, last.ts, last.duration_s, ""); app_state_set(last.verdict == DECO_ERROR ? "error" : deco_verdict_str(last.verdict)); }
 
     s_cmds = xQueueCreate(4, sizeof(cmd_t));
+    deco_nodes_load_cache();
     wifi_start();
     if (!g_cfg.wifi_verified) xTaskCreate(unverified_wifi_watchdog, "wifi_wd", 4096, NULL, 3, NULL);
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");

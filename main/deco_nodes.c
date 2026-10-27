@@ -15,12 +15,14 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "esp_mac.h"
 #include "mbedtls/rsa.h"
 #include "mbedtls/bignum.h"
 #include "mbedtls/aes.h"
 #include "mbedtls/md5.h"
 #include "mbedtls/base64.h"
 #include "cJSON.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 #include "settings.h"
 #include "wifi.h"
@@ -60,6 +62,48 @@ bool deco_node_for_bssid(const uint8_t bssid[6], deco_node_t *out)
     if (hit >= 0) *out = s_nodes[hit];
     portEXIT_CRITICAL(&s_mux);
     return hit >= 0;
+}
+
+void deco_node_label(const uint8_t bssid[6], char *out, size_t n)
+{
+    deco_node_t m;
+    if (deco_node_for_bssid(bssid, &m)) snprintf(out, n, "%s (%s)", m.name, m.model);
+    else if (n) out[0] = 0;
+}
+
+// The table of the last successful read is kept in NVS (about 700 bytes), so names are known from boot. It is only
+// written when it differs from what is stored, which is normally never.
+typedef struct { uint8_t count; deco_node_t nodes[DECO_MAX_NODES]; } node_cache_t;
+
+void deco_nodes_load_cache(void)
+{
+    nvs_handle_t h;
+    if (nvs_open("nodes", NVS_READONLY, &h) != ESP_OK) return;
+    node_cache_t *c = calloc(1, sizeof *c);
+    size_t len = sizeof *c;
+    if (c && nvs_get_blob(h, "tab", c, &len) == ESP_OK && len == sizeof *c && c->count <= DECO_MAX_NODES) {
+        portENTER_CRITICAL(&s_mux);
+        memcpy(s_nodes, c->nodes, sizeof s_nodes); s_count = c->count;
+        portEXIT_CRITICAL(&s_mux);
+        ESP_LOGI(TAG, "%d nodes loaded from the saved list", s_count);
+    }
+    free(c);
+    nvs_close(h);
+}
+
+static void save_cache(void)
+{
+    node_cache_t *c = calloc(1, sizeof *c), *old = calloc(1, sizeof *c);
+    nvs_handle_t h;
+    if (c && old && nvs_open("nodes", NVS_READWRITE, &h) == ESP_OK) {
+        c->count = s_count;
+        memcpy(c->nodes, s_nodes, sizeof c->nodes);
+        size_t len = sizeof *old;
+        bool same = nvs_get_blob(h, "tab", old, &len) == ESP_OK && len == sizeof *c && !memcmp(old, c, sizeof *c);
+        if (!same && nvs_set_blob(h, "tab", c, sizeof *c) == ESP_OK) nvs_commit(h);
+        nvs_close(h);
+    }
+    free(c); free(old);
 }
 
 /* ---------- JSON scanner: picks fields out of the device_list objects as the bytes go past ---------- */
@@ -516,6 +560,13 @@ static int fetch_once(void)
                          deco_node_for_bssid(ap.bssid, &m) ? m.name : "no node matches");
             }
             evlog_event("mesh: %d nodes read from the Deco", s_count);
+            uint8_t fb[6];
+            if (wifi_first_unnamed_bssid(fb)) {
+                char nm[56];
+                deco_node_label(fb, nm, sizeof nm);
+                evlog_event("wifi: the first node this boot, " MACSTR ", is %s", MAC2STR(fb), nm[0] ? nm : "not in the list");
+            }
+            save_cache();
             rc = 0;
             break;
         }

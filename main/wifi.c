@@ -16,6 +16,7 @@
 #include "ping/ping_sock.h"
 #include "settings.h"
 #include "evlog.h"
+#include "deco_nodes.h"
 
 static const char *TAG = "wifi";
 static EventGroupHandle_t s_eg;
@@ -37,6 +38,15 @@ static void unpin(void)
     ESP_LOGI(TAG, "no longer pinned to a mesh node");
 }
 
+static uint8_t s_first_unnamed[6];
+static bool s_first_seen, s_first_is_unnamed;
+
+bool wifi_first_unnamed_bssid(uint8_t out[6])
+{
+    if (s_first_is_unnamed) memcpy(out, s_first_unnamed, 6);
+    return s_first_is_unnamed;
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
@@ -55,6 +65,13 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         wifi_ap_record_t ap;
         if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
             ESP_LOGI(TAG, "got ip " IPSTR ", node " MACSTR " ch %d rssi %d", IP2STR(&got->ip_info.ip), MAC2STR(ap.bssid), ap.primary, ap.rssi);
+        if (!s_first_seen && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {   // the first node of this boot
+            s_first_seen = true;
+            char nm[56];
+            deco_node_label(ap.bssid, nm, sizeof nm);
+            if (nm[0]) evlog_event("wifi: connected to node %s " MACSTR " (rssi %d)", nm, MAC2STR(ap.bssid), ap.rssi);
+            else { evlog_event("wifi: connected to node " MACSTR " (rssi %d)", MAC2STR(ap.bssid), ap.rssi); memcpy(s_first_unnamed, ap.bssid, 6); s_first_is_unnamed = true; }
+        }
     }
 }
 
@@ -190,7 +207,9 @@ static bool switch_node(void)
     }
     bool switched = false;
     if (best >= 0) {
-        evlog_event("wifi: moving to node " MACSTR " (rssi %d)", MAC2STR(aps[best].bssid), aps[best].rssi);
+        char nm[56];
+        deco_node_label(aps[best].bssid, nm, sizeof nm);
+        evlog_event("wifi: moving to node %s%s" MACSTR " (rssi %d)", nm, nm[0] ? " " : "", MAC2STR(aps[best].bssid), aps[best].rssi);
         memcpy(c.sta.bssid, aps[best].bssid, 6);
         c.sta.bssid_set = true;
         esp_wifi_set_config(WIFI_IF_STA, &c);
