@@ -371,7 +371,9 @@ static int http_post(const char *url, const char *body, const char *cookie, hdr_
             status = esp_http_client_get_status_code(c);
             uint8_t buf[512]; int n;
             while ((n = esp_http_client_read(c, (char *)buf, sizeof buf)) > 0) sink(sink_ctx, buf, n);
-            if (n < 0) { ESP_LOGW(TAG, "read error %d", n); status = -1; }
+            // A reset after the last byte is common with this server. Whether the reply is complete is judged by the
+            // caller (the base64 string closed and the AES padding was valid), so keep the status from the headers.
+            if (n < 0) ESP_LOGW(TAG, "read error %d (after %d status)", n, status);
         }
         esp_http_client_close(c);
     }

@@ -170,10 +170,14 @@ static void startup_scan_task(void *arg)
     for (int i = 0; i < 30 && g_cfg.mqtt_user[0] && !mqtt_is_connected(); i++) vTaskDelay(pdMS_TO_TICKS(1000));
     for (int i = 0; i < 30 && time(NULL) < 1700000000; i++) vTaskDelay(pdMS_TO_TICKS(1000));   // wait for the clock
     vTaskDelay(pdMS_TO_TICKS(2000));
-    cmd_t n = CMD_FETCH_NODES;              // the mesh node list, once per boot, while the link is calm: a scan upsets Wi-Fi
-    xQueueSend(s_cmds, &n, 0);              // (it takes up to 25 s, so the startup scan waits for it)
     cmd_t c = CMD_RUN_STARTUP;
     xQueueSend(s_cmds, &c, 0);
+    // The mesh node list, once per boot. It is slow (the Deco takes 10-25 s per answer), so it goes after the scan, and not
+    // straight after it: a scan upsets Wi-Fi for a while and the web read then times out. If the scan is still running when
+    // this fires, the command simply queues behind it.
+    vTaskDelay(pdMS_TO_TICKS(90000));
+    cmd_t n = CMD_FETCH_NODES;
+    xQueueSend(s_cmds, &n, 0);
     vTaskDelete(NULL);
 }
 
