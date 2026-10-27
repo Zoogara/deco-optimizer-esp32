@@ -4,6 +4,10 @@ Runs the TP-Link Deco mesh **network optimization** (scan, then optimize if the 
 ESP32-C3 with a 1.28" round touch display (Guition ESP32-2424S012: GC9A01 + CST816S), on demand or on a daily schedule.
 Status and controls are on the display, on a small web page, and in Home Assistant over MQTT.
 
+**No screen? It runs headless too.** The display is optional: a compile-time switch (`CONFIG_DECO_HEADLESS`) builds the same
+firmware without it, so a bare ESP32-C3 board with no display will do (other chips: see [Chip support](#chip-support)). The web page, Home Assistant
+and the schedule work exactly the same, and first-run setup is done from your phone or laptop (see [Headless build](#headless-build-no-screen)).
+
 The Deco mesh has no local API for this feature. The Deco app does it over an SSH tunnel into the master Deco, speaking a
 binary protocol ("TMP") to a service on the Deco's loopback interface; this project reproduces that. The protocol notes and a
 Python reference implementation are in [Zoogara/deco-network-optimize](https://github.com/Zoogara/deco-network-optimize).
