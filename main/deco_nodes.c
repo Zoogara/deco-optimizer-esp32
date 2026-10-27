@@ -433,12 +433,15 @@ static void get_keys(const char *what, const char *url, char *nn, size_t nn_cap,
 
 /* ---------- the whole exchange ---------- */
 
-void deco_nodes_fetch(void)
+// One whole attempt. 0 = read OK, 1 = a transient failure (no reply, timeout: worth another go), 2 = not worth retrying
+// (no password, or the Deco refused the login: never hammer a login).
+static int fetch_once(void)
 {
-    if (!wifi_wait_connected(15000)) return;
+    int rc = 1;
+    if (!wifi_wait_connected(15000)) return 1;
     session_t *s = calloc(1, sizeof *s);
     jx_t *jx = calloc(1, sizeof *jx);
-    if (!s || !jx) { ESP_LOGW(TAG, "no memory"); free(s); free(jx); return; }
+    if (!s || !jx) { ESP_LOGW(TAG, "no memory"); free(s); free(jx); return 1; }
     int64_t t0 = esp_timer_get_time();
     const char *user = "admin";
 #ifdef CONFIG_DECO_HTTP_TEST_BASE
@@ -446,7 +449,7 @@ void deco_nodes_fetch(void)
     else
 #endif
     { snprintf(s->base, sizeof s->base, "http://%s", g_cfg.deco_host); strlcpy(s->password, g_cfg.deco_pass, sizeof s->password); }
-    if (!s->password[0]) { ESP_LOGW(TAG, "no Deco password set"); goto out; }
+    if (!s->password[0]) { ESP_LOGW(TAG, "no Deco password set"); rc = 2; goto out; }
     ESP_LOGI(TAG, "reading the mesh node list (heap free %u, largest %u)", (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
     char url[200]; bool ok = true;
@@ -468,7 +471,7 @@ void deco_nodes_fetch(void)
 
     // login
     char hexpw[300];
-    if (!rsa_encrypt_hex(s->pw_nn, s->pw_ee, (const uint8_t *)s->password, strlen(s->password), hexpw, sizeof hexpw)) { ESP_LOGW(TAG, "could not encrypt the password"); goto out; }
+    if (!rsa_encrypt_hex(s->pw_nn, s->pw_ee, (const uint8_t *)s->password, strlen(s->password), hexpw, sizeof hexpw)) { ESP_LOGW(TAG, "could not encrypt the password"); rc = 2; goto out; }
     char login_json[420], reply[600];
     snprintf(login_json, sizeof login_json, "{\"params\":{\"password\":\"%s\"},\"operation\":\"login\"}", hexpw);
     hdr_ctx_t hdr = {0};
@@ -479,6 +482,7 @@ void deco_nodes_fetch(void)
     if (!cJSON_IsString(stok) || !hdr.cookie[0] || strlen(stok->valuestring) >= sizeof s->stok) {
         ESP_LOGW(TAG, "login failed (HTTP %d, %s)", st, st == 200 ? (lj ? "no session token or cookie" : "reply not JSON") : "no usable reply");
         cJSON_Delete(lj);
+        rc = st == 200 ? 2 : 1;                 // a reply that decrypts but has no token is a refusal; no reply is just the network
         goto out;
     }
     strcpy(s->stok, stok->valuestring); strcpy(s->cookie, hdr.cookie); s->logged_in = true;
@@ -510,6 +514,7 @@ void deco_nodes_fetch(void)
                          deco_node_for_bssid(ap.bssid, &m) ? m.name : "no node matches");
             }
             evlog_event("mesh: %d nodes read from the Deco", s_count);
+            rc = 0;
             break;
         }
     }
@@ -522,4 +527,16 @@ void deco_nodes_fetch(void)
 out:
     memset(s, 0, sizeof *s);
     free(s); free(jx);
+    return rc;
+}
+
+void deco_nodes_fetch(void)
+{
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt) { ESP_LOGW(TAG, "reading the node list again in 15 s"); vTaskDelay(pdMS_TO_TICKS(15000)); }
+        int rc = fetch_once();
+        if (rc == 0) return;
+        if (rc == 2) { evlog_event("mesh: node list not read (no password, or the Deco refused the login)"); return; }
+    }
+    evlog_event("mesh: node list could not be read this boot (network)");
 }
