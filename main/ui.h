@@ -19,6 +19,7 @@ typedef struct {
     char host[28];            // e.g. deco-optimizer.local
     char ssid[33];
     int rssi;
+    char node[56];            // the Deco node we are connected to, e.g. "Study (M5)"; empty if unknown
     bool mqtt_enabled, mqtt_connected;
     uint32_t uptime_s;
     uint32_t free_kb;

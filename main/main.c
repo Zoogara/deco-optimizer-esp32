@@ -17,6 +17,7 @@
 #include "display.h"
 #include "wifi.h"
 #include "deco.h"
+#include "deco_nodes.h"
 #include "history.h"
 #include "ui.h"
 #include "mqtt.h"
@@ -33,7 +34,7 @@
 
 static const char *TAG = "app";
 
-typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP } cmd_t;
+typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP, CMD_FETCH_NODES } cmd_t;
 static QueueHandle_t s_cmds;
 static volatile bool s_busy;
 #define NET_DEAD_REBOOT_S 600          // see scheduler_task: last-resort self-heal
@@ -68,6 +69,7 @@ static void worker_task(void *arg)
     cmd_t c;
     for (;;) {
         if (xQueueReceive(s_cmds, &c, portMAX_DELAY) != pdTRUE) continue;
+        if (c == CMD_FETCH_NODES) { deco_nodes_fetch(); continue; }     // once per boot, before the first SSH run
         if (s_busy) continue;
         s_busy = true; app_busy_set(true);
         screensaver_wake();                // a run (scheduled, manual, web or MQTT) lights the screen
@@ -168,6 +170,8 @@ static void startup_scan_task(void *arg)
     for (int i = 0; i < 30 && g_cfg.mqtt_user[0] && !mqtt_is_connected(); i++) vTaskDelay(pdMS_TO_TICKS(1000));
     for (int i = 0; i < 30 && time(NULL) < 1700000000; i++) vTaskDelay(pdMS_TO_TICKS(1000));   // wait for the clock
     vTaskDelay(pdMS_TO_TICKS(2000));
+    cmd_t n = CMD_FETCH_NODES;              // the mesh node list, once per boot, while the link is calm: a scan upsets Wi-Fi
+    xQueueSend(s_cmds, &n, 0);              // (it takes up to 25 s, so the startup scan waits for it)
     cmd_t c = CMD_RUN_STARTUP;
     xQueueSend(s_cmds, &c, 0);
     vTaskDelete(NULL);
@@ -191,7 +195,16 @@ static void update_device_info(void)
     if (wifi_is_connected() && nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK) {
         d.wifi_up = true;
         snprintf(d.ip, sizeof d.ip, IPSTR, IP2STR(&ip.ip));
-        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) { strlcpy(d.ssid, (const char *)ap.ssid, sizeof d.ssid); d.rssi = ap.rssi; }
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            strlcpy(d.ssid, (const char *)ap.ssid, sizeof d.ssid); d.rssi = ap.rssi;
+            deco_node_t node;
+            if (deco_node_for_bssid(ap.bssid, &node)) snprintf(d.node, sizeof d.node, "%s (%s)", node.name, node.model);
+            static char last_node[56];                 // log a change, not every refresh
+            if (strcmp(last_node, d.node)) {
+                strlcpy(last_node, d.node, sizeof last_node);
+                ESP_LOGI(TAG, "connected node: %s", d.node[0] ? d.node : "unknown");
+            }
+        }
     }
     strlcpy(d.host, "deco-optimizer.local", sizeof d.host);
     d.mqtt_enabled = g_cfg.mqtt_user[0] != 0;

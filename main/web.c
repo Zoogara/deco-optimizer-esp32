@@ -21,6 +21,7 @@
 #include "mqtt.h"
 #include "deco.h"
 #include "evlog.h"
+#include "deco_nodes.h"
 
 static const char *TAG = "web";
 static web_callbacks_t s_cb;
@@ -137,6 +138,11 @@ static esp_err_t h_status(httpd_req_t *r)
         cJSON_AddNumberToObject(w, "rssi", ap.rssi);
         cJSON_AddNumberToObject(w, "channel", ap.primary);
         cJSON_AddStringToObject(w, "bssid", b);
+        deco_node_t node;
+        if (deco_node_for_bssid(ap.bssid, &node)) {
+            char nm[56]; snprintf(nm, sizeof nm, "%s (%s)", node.name, node.model);
+            cJSON_AddStringToObject(w, "node", nm);
+        }
     }
     esp_netif_ip_info_t ip;
     esp_netif_t *nif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");

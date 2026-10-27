@@ -53,6 +53,7 @@ void demo_device_info(ui_device_info_t *d)
     strcpy(d->host, "deco-optimizer.local");
     strcpy(d->ssid, "HomeMesh");
     d->rssi = -52;
+    strcpy(d->node, "Study (M5)");
     d->mqtt_enabled = true; d->mqtt_connected = true;
     d->uptime_s = 3 * 86400 + 5 * 3600;
     d->free_kb = 118;

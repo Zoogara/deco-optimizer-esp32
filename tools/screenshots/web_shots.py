@@ -27,7 +27,7 @@ def status(scn):
         st.update(state="error")
         hist.insert(0, (ts(14, 3, 0), "error", 0, 2))
     return {**st, "next": ts(15, 3, 0), "sched_en": 1,
-            "wifi": {"ssid": "HomeMesh", "rssi": -52, "channel": 6, "bssid": "02:00:5e:00:53:01", "ip": "192.168.1.50"},
+            "wifi": {"ssid": "HomeMesh", "rssi": -52, "channel": 6, "bssid": "02:00:5e:00:53:21", "node": "Study (M5)", "ip": "192.168.1.50"},
             "mqtt": {"enabled": True, "connected": True},
             "sys": {"heap": 121000, "min_heap": 29000, "largest": 78000, "uptime": 3 * 86400 + 5 * 3600},
             "history": [{"ts": a, "v": b, "dur": c, "flags": d} for a, b, c, d in hist]}

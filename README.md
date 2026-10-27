@@ -16,6 +16,8 @@ Python reference implementation are in [Zoogara/deco-network-optimize](https://g
 - Screensaver: after 5 minutes without a touch the screen shows a short burst of "snow" and the backlight turns off. A touch wakes it (that touch is
   not passed on to the buttons underneath), and so does every scan or optimise run, scheduled or not. Set `CONFIG_DECO_SCREENSAVER_TIMEOUT_S` to change the time, or `0` to disable.
 - Home Assistant MQTT discovery (state, last/next scan, optimise switch, run button), with availability.
+- Knows which Deco node it is connected to (name and model, e.g. "via Study (M5)"), shown on the device page and the web page. The node list is read once per
+  boot from the Deco's local web interface and matched against the BSSID the board is joined to.
 - Wi-Fi tuned for a multi-node mesh: joins the strongest node, pings the gateway before each run and moves off a node
   that is not passing traffic.
 - First-run setup: the device starts its own access point (QR code on screen) and a captive portal asks for the Wi-Fi network and a
@@ -27,7 +29,7 @@ Generated from the real UI code and web page with **invented data** (see [tools/
 ![The five device screens](docs/screenshots/overview.png)
 
 Left to right: status (optimal), status (optimizable), scanning, history, the device page, and the first-run setup screen. Swipe left on the status screen for the
-history, and again for the device page (the device's IP address, hostname, Wi-Fi network and signal, MQTT state, uptime, free memory and firmware version).
+history, and again for the device page (the device's IP address, hostname, Wi-Fi network and signal, the Deco node it is connected through, MQTT state, uptime, free memory and firmware version).
 A `*` in the history marks a run made in optimise mode. The coloured word is the Deco's verdict from the last scan.
 
 <table><tr>
@@ -107,7 +109,8 @@ The Deco acknowledges each scan or optimise request with an `error_code`; a non-
   (`HMAC_UP`) on first boot. **This is irreversible** and uses one of the six key blocks. Secure boot and flash encryption are not enabled,
   so someone who can reflash the chip can still ask it to decrypt; the protection is against reading secrets from a flash dump.
 - The web page is **plain HTTP** with Basic auth (user `admin`). Use it on a trusted network only. Secret fields are write-only.
-- The TP-Link cloud account password is what the Deco accepts for SSH, so treat the device accordingly.
+- The TP-Link cloud account password is what the Deco accepts for SSH, so treat the device accordingly. Once per boot the device also logs in to the Deco's local web
+  interface with the same password (RSA-encrypted password, AES-encrypted requests, over plain HTTP on your LAN) to read the node list, and logs out again.
 - "Erase all settings" on the web page wipes everything and returns the device to setup mode.
 
 ## Build
@@ -147,12 +150,14 @@ Set **Setup-reset button GPIO** (`CONFIG_DECO_RESET_BUTTON_GPIO`, `-1` to disabl
 
 ## Layout
 `main/deco.c` (SSH + TMP client), `tmp_proto.c` (framing), `wifi.c` (mesh-aware station), `settings.c` (encrypted config),
-`provision.c` (setup AP + portal), `web.c` + `web/index.html`, `mqtt.c`, `ui.c`, `display.c`, `history.c`.
+`deco_nodes.c` (node list over the web API), `provision.c` (setup AP + portal), `web.c` + `web/index.html`, `mqtt.c`, `ui.c`, `display.c`, `history.c`.
 `tools/screenshots` renders the screenshots above on a computer.
 
 ## Known limitations
 - Free RAM is tight with the screen: the SSH handshake briefly needs about 78 KB of the roughly 120 KB that is free when idle, which is why the
   web server is HTTP only. A headless build has roughly 66 KB more.
+- Reading the node list is slow (the Deco takes 10-25 s to answer), so the first scan after a boot starts about half a minute later than it otherwise would. If that read fails,
+  no node name is shown until the next boot.
 - The Deco's own scan briefly drops Wi-Fi clients, including this device, so Home Assistant entities flicker "unavailable" during scans.
 
 ## Licence

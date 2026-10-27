@@ -8,7 +8,7 @@
 
 static ui_callbacks_t s_cb;
 static lv_obj_t *s_verdict, *s_sub, *s_next, *s_run_btn, *s_run_lbl, *s_mode_sw, *s_mode_lbl, *s_hist;
-static lv_obj_t *s_dev_ip, *s_dev_host, *s_dev_wifi, *s_dev_mqtt, *s_dev_sys, *s_dev_ver;
+static lv_obj_t *s_dev_ip, *s_dev_host, *s_dev_wifi, *s_dev_node, *s_dev_mqtt, *s_dev_sys, *s_dev_ver;
 
 static lv_color_t verdict_color(deco_verdict_t v)
 {
@@ -120,10 +120,11 @@ void ui_init(const ui_callbacks_t *cb, bool optimize_initial)
     s_dev_ip = make_label(dcol, &lv_font_montserrat_20, lv_color_white());
     s_dev_host = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0xB0B0B0));
     s_dev_wifi = make_label(dcol, &lv_font_montserrat_14, lv_color_white());
+    s_dev_node = make_label(dcol, &lv_font_montserrat_14, lv_color_white());
     s_dev_mqtt = make_label(dcol, &lv_font_montserrat_14, lv_color_white());
     s_dev_sys = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0xB0B0B0));
     s_dev_ver = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0x808080));
-    lv_obj_t *dev_labels[] = {s_dev_ip, s_dev_host, s_dev_wifi, s_dev_mqtt, s_dev_sys, s_dev_ver};
+    lv_obj_t *dev_labels[] = {s_dev_ip, s_dev_host, s_dev_wifi, s_dev_node, s_dev_mqtt, s_dev_sys, s_dev_ver};
     for (size_t i = 0; i < sizeof dev_labels / sizeof dev_labels[0]; i++) {
         lv_obj_set_width(dev_labels[i], 176);                       /* long names are cut with "..." */
         lv_label_set_long_mode(dev_labels[i], LV_LABEL_LONG_DOT);
@@ -234,6 +235,9 @@ void ui_set_device_info(const ui_device_info_t *d)
     lv_label_set_text(s_dev_ip, ip);
     lv_label_set_text(s_dev_host, d->wifi_up ? d->host : "");
     lv_label_set_text(s_dev_wifi, wifi);
+    char via[64];
+    snprintf(via, sizeof via, "via %s", d->node);
+    lv_label_set_text(s_dev_node, d->wifi_up && d->node[0] ? via : "");
     lv_label_set_text(s_dev_mqtt, mqtt);
     lv_label_set_text(s_dev_sys, sys);
     lv_label_set_text(s_dev_ver, ver);

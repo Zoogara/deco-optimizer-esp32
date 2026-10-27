@@ -37,4 +37,15 @@ menu "Deco Optimizer"
             A touch wakes it (the wake touch is not passed to the interface), and so does every scan or optimise run.
             Not used during first-run setup, so the QR code stays on screen. Headless builds have no screen.
 
+    config DECO_HTTP_TEST_BASE
+        string "Debug: base URL for the Deco web API, to test against an imitation (empty = the real Deco)"
+        default ""
+        help
+            Development only, e.g. "http://192.168.1.50:8099". When set, the node-list fetch talks to that server instead
+            of the Deco, and uses DECO_HTTP_TEST_PASSWORD, so the real password is never sent to a test server.
+
+    config DECO_HTTP_TEST_PASSWORD
+        string "Debug: password used with DECO_HTTP_TEST_BASE"
+        default ""
+
 endmenu

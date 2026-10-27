@@ -1,4 +1,4 @@
-set(srcs main.c tmp_proto.c wifi.c deco.c history.c mqtt.c settings.c provision.c web.c appstate.c evlog.c)
+set(srcs main.c tmp_proto.c wifi.c deco.c history.c mqtt.c settings.c provision.c web.c appstate.c evlog.c deco_nodes.c)
 if(CONFIG_DECO_HEADLESS)
     list(APPEND srcs headless.c)          # no-op display/UI
 else()
