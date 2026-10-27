@@ -26,8 +26,9 @@ Generated from the real UI code and web page with **invented data** (see [tools/
 
 ![The five device screens](docs/screenshots/overview.png)
 
-Left to right: status (optimal), status (optimizable), scanning, history, and the first-run setup screen. Swipe left on the status screen for the
-history; a `*` there marks a run made in optimise mode. The coloured word is the Deco's verdict from the last scan.
+Left to right: status (optimal), status (optimizable), scanning, history, the device page, and the first-run setup screen. Swipe left on the status screen for the
+history, and again for the device page (the device's IP address, hostname, Wi-Fi network and signal, MQTT state, uptime, free memory and firmware version).
+A `*` in the history marks a run made in optimise mode. The coloured word is the Deco's verdict from the last scan.
 
 <table><tr>
 <td><img src="docs/screenshots/status_optimise_mode.png" width="240" alt="Status screen with optimise mode on"><br>Optimise mode on</td>
@@ -90,6 +91,15 @@ With MQTT configured, one device, **Deco Optimizer**, appears through MQTT disco
 Topics are under `deco_optimizer/<id>/` (`state`, `attributes`, `last_run`, `next_run`, `mode`, `availability`; commands on `mode/set` with `ON`/`OFF` and `run/set` with `PRESS`),
 where `<id>` is the last three bytes of the MAC address in hex. Availability uses a retained last-will message, so entities show "unavailable" if the device drops off MQTT, which also
 happens briefly during a Deco scan (the scan disturbs Wi-Fi clients, this device included).
+
+## Logs
+Two logs, chosen so that they cannot wear out the flash or starve the RAM the SSH handshake needs. Both are on the web page under **Log**.
+- **Events** are kept in the encrypted NVS and survive restarts: each boot with its reset reason and firmware version, each run's outcome (with the failure reason and the step
+  it reached, e.g. `run optimise/manual: ERROR: optimize error_code 3 (21s, 2 attempts, last step 'optimizing')`), forced Wi-Fi reconnects and node moves, and self-heal reboots.
+  The last 24 are kept, one small write per event, at most 30 an hour.
+- **Detailed log**: the last 4 KB of everything the firmware prints, held in RAM (so it costs no flash wear) and lost on restart.
+
+The Deco acknowledges each scan or optimise request with an `error_code`; a non-zero value is now reported as the reason for the failed run instead of being ignored.
 
 ## Security notes
 - All settings and secrets (Wi-Fi, TP-Link login, MQTT login, admin password, pinned host key) are stored in one blob in an

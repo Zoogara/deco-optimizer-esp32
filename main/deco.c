@@ -120,6 +120,23 @@ static bool tmp_request(conn_t *c, uint16_t opcode, const char *json, char *json
     return true;
 }
 
+// The Deco acknowledges scan/optimize requests with {"error_code":N}; a non-zero N means it refused.
+static bool request_ack(conn_t *c, uint16_t op, const char *json, const char *what, char *err, size_t errcap)
+{
+    char body[160];
+    if (!tmp_request(c, op, json, body, sizeof body)) { snprintf(err, errcap, "%s request", what); return false; }
+    ESP_LOGI(TAG, "%s ack: %.100s", what, body);
+    int code = 0;
+    cJSON *j = cJSON_Parse(body);
+    if (j) {
+        cJSON *ec = cJSON_GetObjectItem(j, "error_code");
+        if (cJSON_IsNumber(ec)) code = ec->valueint;
+        cJSON_Delete(j);
+    }
+    if (code != 0) { snprintf(err, errcap, "%s error_code %d", what, code); return false; }
+    return true;
+}
+
 static bool conn_open(conn_t *c, char *err, size_t errcap)
 {
     memset(c, 0, sizeof *c); c->sock = -1;
@@ -211,9 +228,12 @@ static bool poll_until_idle(conn_t *c, uint32_t timeout_s, nq_t *out, deco_progr
 {
     int64_t end = esp_timer_get_time() + (int64_t)timeout_s * 1000000;
     char body[700];
+    int last_state = -1;                      // log the poll result only when it changes, not every 2 s
     while (esp_timer_get_time() < end) {
         if (c->ch && tmp_request(c, OP_POLL, POLL_JSON, body, sizeof body)) {
             nq_t r = parse_poll(body);
+            int state = r.parsed ? (r.idle << 2 | r.optimizable << 1 | r.optimal) : 8;
+            if (state != last_state) { last_state = state; ESP_LOGI(TAG, "poll: %s idle=%d optimizable=%d optimal=%d", r.parsed ? "ok" : "unparsed", r.idle, r.optimizable, r.optimal); }
             if (r.parsed && r.idle) { *out = r; return true; }
         } else {
             if (cb) cb("link dropped,\nreconnecting");
@@ -242,13 +262,13 @@ void deco_run(bool optimize, deco_result_t *out, deco_progress_cb cb)
     if (!conn_open(&c, err, sizeof err)) goto done;
 
     if (cb) cb("scanning");
-    if (!tmp_request(&c, OP_SCAN, SCAN_JSON, NULL, 0)) { snprintf(err, sizeof err, "scan request"); goto done; }
+    if (!request_ack(&c, OP_SCAN, SCAN_JSON, "scan", err, sizeof err)) goto done;
     if (!poll_until_idle(&c, DECO_SCAN_TIMEOUT_S, &r, cb, err, sizeof err)) goto done;
 
     if (r.optimizable) {
         if (!optimize) { out->verdict = DECO_OPTIMIZABLE; goto done; }
         if (cb) cb("optimizing");
-        if (!tmp_request(&c, OP_OPT, OPT_JSON, NULL, 0)) { snprintf(err, sizeof err, "optimize request"); goto done; }
+        if (!request_ack(&c, OP_OPT, OPT_JSON, "optimize", err, sizeof err)) goto done;
         if (!poll_until_idle(&c, DECO_OPTIMIZE_TIMEOUT_S, &r, cb, err, sizeof err)) goto done;
         out->verdict = DECO_OPTIMIZED;
     } else {

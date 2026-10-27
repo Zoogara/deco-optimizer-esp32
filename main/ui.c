@@ -8,6 +8,7 @@
 
 static ui_callbacks_t s_cb;
 static lv_obj_t *s_verdict, *s_sub, *s_next, *s_run_btn, *s_run_lbl, *s_mode_sw, *s_mode_lbl, *s_hist;
+static lv_obj_t *s_dev_ip, *s_dev_host, *s_dev_wifi, *s_dev_mqtt, *s_dev_sys, *s_dev_ver;
 
 static lv_color_t verdict_color(deco_verdict_t v)
 {
@@ -53,7 +54,8 @@ void ui_init(const ui_callbacks_t *cb, bool optimize_initial)
     lv_obj_t *tv = lv_tileview_create(scr);
     lv_obj_set_style_bg_color(tv, lv_color_black(), 0);
     lv_obj_t *t0 = lv_tileview_add_tile(tv, 0, 0, LV_DIR_RIGHT);
-    lv_obj_t *t1 = lv_tileview_add_tile(tv, 1, 0, LV_DIR_LEFT);
+    lv_obj_t *t1 = lv_tileview_add_tile(tv, 1, 0, LV_DIR_LEFT | LV_DIR_RIGHT);
+    lv_obj_t *t2 = lv_tileview_add_tile(tv, 2, 0, LV_DIR_LEFT);
 
     /* --- status tile: a centred column that stays inside the round bezel --- */
     lv_obj_t *col = lv_obj_create(t0);
@@ -105,6 +107,29 @@ void ui_init(const ui_callbacks_t *cb, bool optimize_initial)
     lv_obj_set_style_text_align(s_hist, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_recolor(s_hist, true);
     lv_obj_align(s_hist, LV_ALIGN_TOP_LEFT, 0, 24);
+    /* --- device page: where to find it on the network, and its health --- */
+    lv_obj_t *dcol = lv_obj_create(t2);
+    lv_obj_remove_style_all(dcol);
+    lv_obj_set_size(dcol, 190, 200);
+    lv_obj_center(dcol);
+    lv_obj_set_flex_flow(dcol, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(dcol, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(dcol, 4, 0);
+    lv_obj_t *dt = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0x808080));
+    lv_label_set_text(dt, "DEVICE");
+    s_dev_ip = make_label(dcol, &lv_font_montserrat_20, lv_color_white());
+    s_dev_host = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0xB0B0B0));
+    s_dev_wifi = make_label(dcol, &lv_font_montserrat_14, lv_color_white());
+    s_dev_mqtt = make_label(dcol, &lv_font_montserrat_14, lv_color_white());
+    s_dev_sys = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0xB0B0B0));
+    s_dev_ver = make_label(dcol, &lv_font_montserrat_14, lv_color_hex(0x808080));
+    lv_obj_t *dev_labels[] = {s_dev_ip, s_dev_host, s_dev_wifi, s_dev_mqtt, s_dev_sys, s_dev_ver};
+    for (size_t i = 0; i < sizeof dev_labels / sizeof dev_labels[0]; i++) {
+        lv_obj_set_width(dev_labels[i], 176);                       /* long names are cut with "..." */
+        lv_label_set_long_mode(dev_labels[i], LV_LABEL_LONG_DOT);
+        lv_label_set_text(dev_labels[i], "");
+    }
+    lv_label_set_text(s_dev_ip, "no network");
     screensaver_init();
     lvgl_port_unlock();
     ui_refresh_history();
@@ -187,5 +212,30 @@ void ui_show_setup(const char *ap_ssid, const char *ap_pass)
     lv_label_set_text(t, buf);
     lv_obj_align(t, LV_ALIGN_BOTTOM_MID, 0, -40);
     lv_scr_load(scr);
+    lvgl_port_unlock();
+}
+
+void ui_set_device_info(const ui_device_info_t *d)
+{
+    char ip[24], wifi[64], mqtt[40], sys[48], ver[40];
+    if (d->wifi_up) {
+        snprintf(ip, sizeof ip, "%s", d->ip);
+        snprintf(wifi, sizeof wifi, "%s  %d dBm", d->ssid, d->rssi);
+    } else {
+        snprintf(ip, sizeof ip, "no network");
+        snprintf(wifi, sizeof wifi, "Wi-Fi: connecting");
+    }
+    snprintf(mqtt, sizeof mqtt, "MQTT: %s", !d->mqtt_enabled ? "off" : d->mqtt_connected ? "connected" : "not connected");
+    uint32_t days = d->uptime_s / 86400, hrs = d->uptime_s % 86400 / 3600, mins = d->uptime_s % 3600 / 60;
+    if (days) snprintf(sys, sizeof sys, "up %ud %uh   %u KB free", (unsigned)days, (unsigned)hrs, (unsigned)d->free_kb);
+    else snprintf(sys, sizeof sys, "up %uh %um   %u KB free", (unsigned)hrs, (unsigned)mins, (unsigned)d->free_kb);
+    snprintf(ver, sizeof ver, "fw %s", d->version);
+    lvgl_port_lock(0);
+    lv_label_set_text(s_dev_ip, ip);
+    lv_label_set_text(s_dev_host, d->wifi_up ? d->host : "");
+    lv_label_set_text(s_dev_wifi, wifi);
+    lv_label_set_text(s_dev_mqtt, mqtt);
+    lv_label_set_text(s_dev_sys, sys);
+    lv_label_set_text(s_dev_ver, ver);
     lvgl_port_unlock();
 }

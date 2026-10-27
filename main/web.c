@@ -20,6 +20,7 @@
 #include "appstate.h"
 #include "mqtt.h"
 #include "deco.h"
+#include "evlog.h"
 
 static const char *TAG = "web";
 static web_callbacks_t s_cb;
@@ -262,6 +263,39 @@ static esp_err_t h_repin(httpd_req_t *r)
     return send_json(r, o);
 }
 
+// Persistent events (boot reasons, run outcomes with failure reasons, ...), newest first.
+static esp_err_t h_events(httpd_req_t *r)
+{
+    if (!authorised(r)) return ESP_OK;
+    evlog_event_t *ev = malloc(EVLOG_EVENT_SLOTS * sizeof *ev);
+    if (!ev) { httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_FAIL; }
+    int n = evlog_events_read(ev, EVLOG_EVENT_SLOTS);
+    cJSON *arr = cJSON_CreateArray();
+    for (int i = 0; i < n; i++) {
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddNumberToObject(o, "ts", ev[i].ts);
+        cJSON_AddNumberToObject(o, "up", ev[i].uptime_s);
+        cJSON_AddStringToObject(o, "text", ev[i].text);
+        cJSON_AddItemToArray(arr, o);
+    }
+    free(ev);
+    return send_json(r, arr);
+}
+
+// Everything the firmware logged recently (RAM ring buffer; empty after a restart).
+static esp_err_t h_log(httpd_req_t *r)
+{
+    if (!authorised(r)) return ESP_OK;
+    char *buf = malloc(EVLOG_RAM_SIZE + 1);
+    if (!buf) { httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "oom"); return ESP_FAIL; }
+    size_t n = evlog_ram_copy(buf, EVLOG_RAM_SIZE + 1);
+    httpd_resp_set_type(r, "text/plain");
+    httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+    esp_err_t e = httpd_resp_send(r, buf, n);
+    free(buf);
+    return e;
+}
+
 static void erase_task(void *arg)
 {
     vTaskDelay(pdMS_TO_TICKS(1500));
@@ -317,6 +351,8 @@ void web_start(const web_callbacks_t *cb)
         {.uri = "/api/repin", .method = HTTP_POST, .handler = h_repin},
         {.uri = "/api/reboot", .method = HTTP_POST, .handler = h_reboot},
         {.uri = "/api/erase", .method = HTTP_POST, .handler = h_erase},
+        {.uri = "/api/events", .method = HTTP_GET, .handler = h_events},
+        {.uri = "/api/log", .method = HTTP_GET, .handler = h_log},
     };
     for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++) httpd_register_uri_handler(srv, &uris[i]);
     ESP_LOGI(TAG, "web page up: http://deco-optimizer.local/");

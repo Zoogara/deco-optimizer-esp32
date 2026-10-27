@@ -3,6 +3,7 @@
 #include <time.h>
 #include "history.h"
 #include "deco.h"
+#include "ui.h"
 
 void screensaver_init(void) {}   /* the host renderer has no idle timer */
 
@@ -41,6 +42,21 @@ void demo_fill_history(void)
     };
     s_count = sizeof h / sizeof h[0];
     memcpy(s_hist, h, sizeof h);
+}
+
+/* The device page: invented, with a documentation-style address and made-up network. */
+void demo_device_info(ui_device_info_t *d)
+{
+    memset(d, 0, sizeof *d);
+    d->wifi_up = true;
+    strcpy(d->ip, "192.168.1.50");
+    strcpy(d->host, "deco-optimizer.local");
+    strcpy(d->ssid, "HomeMesh");
+    d->rssi = -52;
+    d->mqtt_enabled = true; d->mqtt_connected = true;
+    d->uptime_s = 3 * 86400 + 5 * 3600;
+    d->free_kb = 118;
+    strcpy(d->version, "a1b2c3d");
 }
 
 int history_count(void) { return s_count; }

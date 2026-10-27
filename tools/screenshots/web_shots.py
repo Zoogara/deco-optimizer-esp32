@@ -37,6 +37,29 @@ CONFIG = {"wifi_ssid": "HomeMesh", "deco_host": "192.168.1.1", "deco_email": "us
           "wifi_pass_set": True, "deco_pass_set": True, "mqtt_pass_set": True, "hostkey_set": True,
           "hostkey": "0a:1b:2c:3d:4e:5f:60:71:82:93:a4:b5:c6:d7:e8:f9:0a:1b:2c:3d"}
 
+EVENTS = [  # newest first; invented. (ts, uptime, text)
+    (ts(14, 3, 0), 41, "run report/schedule: optimal (12s, 1 attempt)"),
+    (ts(14, 2, 59), 3, "boot: software restart, firmware a1b2c3d"),
+    (ts(13, 3, 1), 86442, "run report/schedule: optimal (11s, 1 attempt)"),
+    (ts(12, 18, 43), 31, "run optimise/manual: optimized (34s, 1 attempt)"),
+    (ts(12, 18, 40), 18, "run report/manual: optimizable (13s, 1 attempt)"),
+    (ts(12, 3, 2), 99, "run report/schedule: ERROR: optimize error_code 3 (21s, 2 attempts, last step 'optimizing')"),
+    (ts(12, 3, 0), 97, "wifi: forced reconnect"),
+]
+LOG = """I (51234) app: checking wifi
+I (52244) wifi: link check: node 02:00:5e:00:53:01 rssi -52 - 5/5 replies, avg 31 ms
+I (52254) app: connecting
+I (52282) deco: [heap] before session init: free=120636 largest=94208
+I (53584) deco: [heap] after handshake: free=42256 min=29120 largest=15360
+I (53660) app: scanning
+I (53712) deco: scan ack: {"error_code":0}
+I (53840) deco: poll: ok idle=0 optimizable=0 optimal=0
+I (61902) deco: poll: ok idle=1 optimizable=0 optimal=1
+I (61930) deco: result: optimal in 10s
+I (61931) evlog: event: run report/schedule: optimal (10s, 1 attempt)
+I (61940) app: [heap] free=120296 min=29120 largest=77824
+"""
+
 class H(http.server.BaseHTTPRequestHandler):
     scenario, dark = "idle", True
     def log_message(self, *a): pass
@@ -47,6 +70,8 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/status": return self._send(json.dumps(status(H.scenario)), "application/json")
         if self.path == "/api/config": return self._send(json.dumps(CONFIG), "application/json")
+        if self.path == "/api/events": return self._send(json.dumps([{"ts": a, "up": b, "text": c} for a, b, c in EVENTS]), "application/json")
+        if self.path == "/api/log": return self._send(LOG, "text/plain")
         if self.path == "/setup": return self._send(setup_page(), "text/html")
         html = open(os.path.join(ROOT, "main/web/index.html")).read()
         # The page follows the browser's colour scheme, and headless Chrome follows the OS, so pin it:
@@ -104,4 +129,16 @@ for name, scn, dark in [("web_idle_dark", "idle", True), ("web_idle_light", "idl
     shoot(base + "/", name, 760, 3600)
 H.dark = True
 shoot(base + "/setup", "web_setup_dark", 480, 1400)
+
+# Crop the tall page captures into the README-sized pieces.
+def crop(src, dst, y0, y1=None):
+    im = Image.open(os.path.join(OUT, src + ".png"))
+    im.crop((0, y0, im.width, min(im.height, y1) if y1 else im.height)).save(os.path.join(OUT, dst + ".png"))
+    print("wrote", dst + ".png")
+SPLIT = 1936      # between the Schedule and Deco sections, at 2x scale
+for theme in ("dark", "light"):
+    crop("web_idle_" + theme, "web_page_top_" + theme, 0, SPLIT)
+    crop("web_idle_" + theme, "web_page_settings_" + theme, SPLIT)
+crop("web_running_dark", "web_status_running_dark", 0, 880)
+crop("web_error_dark", "web_status_error_dark", 0, 880)
 srv.shutdown()

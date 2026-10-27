@@ -10,6 +10,7 @@
 uint32_t demo_ts(int day, int hour, int min);
 void demo_fill_history(void);
 void host_ui_goto_tile(int x);
+void demo_device_info(ui_device_info_t *d);
 
 #define W 240
 #define H 240
@@ -96,6 +97,12 @@ int main(int argc, char **argv)
     ui_set_result(DECO_OPTIMAL, last, 12, "");
     host_ui_goto_tile(1);
     save(dir, "history");
+
+    fresh_screen(); ui_init(&cb, false); ui_set_next_run(next);
+    ui_set_result(DECO_OPTIMAL, last, 12, "");
+    ui_device_info_t di; demo_device_info(&di); ui_set_device_info(&di);
+    host_ui_goto_tile(2);
+    save(dir, "device");
 
     ui_show_setup("Deco-Setup-A1B2", "k7m3x9pq");
     save(dir, "setup");

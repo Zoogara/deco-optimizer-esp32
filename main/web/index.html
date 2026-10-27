@@ -15,7 +15,7 @@ label{display:block;margin:10px 0 3px;color:var(--dim);font-size:.85em}
 input[type=text],input[type=password],input[type=time]{width:100%;padding:9px;font-size:1em;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
 .sw{display:flex;align-items:center;gap:8px;margin:8px 0}.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:.92em}
 .kv span:nth-child(odd){color:var(--dim)}table{width:100%;border-collapse:collapse;font-size:.92em}td{padding:5px 4px;border-top:1px solid var(--line)}
-.msg{margin-top:10px;font-size:.9em}.danger{border-color:var(--bad)}.danger h2{color:var(--bad)}button.bad{background:var(--bad);color:#fff}code{font-size:.85em;word-break:break-all}
+.msg{margin-top:10px;font-size:.9em}details{margin:8px 0}summary{cursor:pointer;color:var(--tx)}pre{margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font:12px ui-monospace,Menlo,monospace;max-height:340px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px}.danger{border-color:var(--bad)}.danger h2{color:var(--bad)}button.bad{background:var(--bad);color:#fff}code{font-size:.85em;word-break:break-all}
 </style></head><body><main>
 <h1>Deco Optimizer</h1>
 <section><h2>Status</h2>
@@ -45,6 +45,10 @@ input[type=text],input[type=password],input[type=time]{width:100%;padding:9px;fo
  <label>Password</label><input type=password id=wifi_pass autocomplete=new-password>
  <div class=row style="margin-top:12px"><button id=save_wifi>Save and restart</button></div>
  <div class="dim msg">If the new details never connect, the device clears them after 90 seconds and returns to setup mode.</div><div class=msg id=m_wifi></div></section>
+<section><h2>Log</h2>
+ <details id=evd open><summary>Events <span class=dim>(kept across restarts: boots, run results and why a run failed)</span></summary><pre id=evtxt>loading...</pre></details>
+ <details id=lgd><summary>Detailed log <span class=dim>(the last few KB of everything the firmware printed; cleared by a restart)</span></summary>
+  <pre id=lgtxt>open to load</pre><div class=row style="margin-top:8px"><button class=sec id=lgref>Refresh</button></div></details></section>
 <section><h2>Security and device</h2>
  <label>New admin password <span class=dim>(8+ characters)</span></label><input type=password id=admin_pass autocomplete=new-password>
  <div class=row style="margin-top:12px"><button id=save_admin>Change password</button><button class=sec id=reboot>Restart device</button></div><div class=msg id=m_admin></div>
@@ -94,5 +98,9 @@ $('erase').onclick=async()=>{const t=prompt('This permanently erases ALL setting
  if(t!=='ERASE'){say('m_erase','Cancelled - nothing was changed.');return}
  try{await api('/api/erase',{confirm:'ERASE'});say('m_erase','Erased. The device is restarting into setup mode - join its Deco-Setup Wi-Fi from your phone to set it up again.','bad')}catch(e){say('m_erase','Failed: '+(e.message||e),'bad')}};
 $('reboot').onclick=async()=>{if(confirm('Restart the device?')){await api('/api/reboot',{});say('m_admin','Restarting...','ok');setTimeout(()=>location.reload(),20000)}};
-loadCfg();refresh();setInterval(refresh,3000);
+async function loadEvents(){try{const ev=await api('/api/events');
+ $('evtxt').textContent=ev.length?ev.map(e=>(e.ts?new Date(e.ts*1000).toLocaleString([], {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'up '+dur(e.up))+'  '+e.text).join('\n'):'no events recorded yet'}catch(e){$('evtxt').textContent='could not load: '+(e.message||e)}}
+async function loadLog(){try{const r=await fetch('/api/log');if(r.status===401){location.reload();return}$('lgtxt').textContent=(await r.text())||'(empty)'}catch(e){$('lgtxt').textContent='could not load'}}
+$('lgd').addEventListener('toggle',()=>{if($('lgd').open)loadLog()});$('lgref').onclick=loadLog;
+loadCfg();refresh();loadEvents();setInterval(refresh,3000);setInterval(()=>{if($('evd').open)loadEvents()},15000);
 </script></main></body></html>

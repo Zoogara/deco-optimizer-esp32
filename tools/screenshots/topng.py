@@ -23,7 +23,7 @@ for n in names:
     canvas.save(os.path.join(d, n + ".png"))
     print("wrote", n + ".png")
 
-sheet_names = [n for n in ("status_optimal", "status_optimizable", "status_scanning", "history", "setup") if n in out]
+sheet_names = [n for n in ("status_optimal", "status_optimizable", "status_scanning", "history", "device", "setup") if n in out]
 if sheet_names:
     w = out[sheet_names[0]].width
     gap = 20

@@ -15,6 +15,7 @@
 #include "esp_mac.h"
 #include "ping/ping_sock.h"
 #include "settings.h"
+#include "evlog.h"
 
 static const char *TAG = "wifi";
 static EventGroupHandle_t s_eg;
@@ -96,7 +97,7 @@ void wifi_kick(void)
     if (!s_started) return;
     // The disconnect handler reconnects, and the reconnect rescans all channels, so this may well
     // land on a different node from the one that stopped passing traffic.
-    ESP_LOGW(TAG, "forcing reconnect");
+    evlog_event("wifi: forced reconnect");
     unpin();
     xEventGroupClearBits(s_eg, GOT_IP);
     esp_wifi_disconnect();
@@ -189,7 +190,7 @@ static bool switch_node(void)
     }
     bool switched = false;
     if (best >= 0) {
-        ESP_LOGW(TAG, "switching to node " MACSTR " (rssi %d)", MAC2STR(aps[best].bssid), aps[best].rssi);
+        evlog_event("wifi: moving to node " MACSTR " (rssi %d)", MAC2STR(aps[best].bssid), aps[best].rssi);
         memcpy(c.sta.bssid, aps[best].bssid, 6);
         c.sta.bssid_set = true;
         esp_wifi_set_config(WIFI_IF_STA, &c);

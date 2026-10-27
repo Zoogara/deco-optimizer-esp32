@@ -26,6 +26,10 @@
 #include "settings.h"
 #include "provision.h"
 #include "driver/gpio.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "esp_app_desc.h"
+#include "evlog.h"
 
 static const char *TAG = "app";
 
@@ -50,7 +54,8 @@ static void on_mode_remote(bool opt)          // from Home Assistant: also move 
 
 static void set_next(time_t t) { app_next_set((uint32_t)t); ui_set_next_run((uint32_t)t); mqtt_publish_next((uint32_t)t); }
 
-static void progress(const char *msg) { app_state_set(msg); ui_set_busy(msg); mqtt_publish_busy(msg); ESP_LOGI(TAG, "%s", msg); }
+static char s_phase[40];                      // last progress message: where a failed run got to
+static void progress(const char *msg) { strlcpy(s_phase, msg, sizeof s_phase); app_state_set(msg); ui_set_busy(msg); mqtt_publish_busy(msg); ESP_LOGI(TAG, "%s", msg); }
 
 // A scan that times out or gets no answer is retried on a fresh connection (the Deco app does this too).
 static bool is_retryable(const deco_result_t *r)
@@ -70,7 +75,9 @@ static void worker_task(void *arg)
         progress("checking wifi");
         wifi_check_link();      // moves off a mesh node that is not passing traffic
         deco_result_t r;
+        int attempts = 0;
         for (int attempt = 0; attempt < 3; attempt++) {
+            attempts++;
             if (attempt) { progress("retrying"); wifi_kick(); vTaskDelay(pdMS_TO_TICKS(5000)); }
             deco_run(optimize, &r, progress);
             if (!is_retryable(&r)) break;
@@ -79,6 +86,13 @@ static void worker_task(void *arg)
         hist_entry_t e = {.ts = now > 1700000000 ? (uint32_t)now : 0, .duration_s = r.duration_s > 65535 ? 65535 : r.duration_s,
                           .verdict = r.verdict, .flags = (optimize ? 1 : 0) | (c == CMD_RUN_SCHEDULED ? 2 : 0) | (c == CMD_RUN_STARTUP ? 4 : 0)};
         if (r.verdict != DECO_ERROR) s_last_net_ok_us = esp_timer_get_time();
+        // One persistent line per run, with the reason and where it stopped, so a failure can be read afterwards.
+        evlog_event("run %s/%s: %s%s%s (%us, %d attempt%s%s%s%s)", optimize ? "optimise" : "report",
+                    c == CMD_RUN_SCHEDULED ? "schedule" : c == CMD_RUN_STARTUP ? "startup" : "manual",
+                    r.verdict == DECO_ERROR ? "ERROR" : deco_verdict_str(r.verdict),
+                    r.detail[0] ? ": " : "", r.detail, (unsigned)r.duration_s, attempts, attempts == 1 ? "" : "s",
+                    r.verdict == DECO_ERROR ? ", last step '" : "", r.verdict == DECO_ERROR ? s_phase : "",
+                    r.verdict == DECO_ERROR ? "'" : "");
         history_add(&e);
         app_state_set(r.verdict == DECO_ERROR ? "error" : deco_verdict_str(r.verdict));
         ui_set_result(r.verdict, e.ts, r.duration_s, r.detail);
@@ -111,7 +125,7 @@ static void boot_button_task(void *arg)
     for (;;) {
         held = gpio_get_level(BOOT_PIN) == 0 ? held + 1 : 0;
         if (held >= 50) {                                  // 50 x 100 ms
-            ESP_LOGW(TAG, "BOOT held 5 s: clearing Wi-Fi settings, restarting into setup");
+            evlog_event("BOOT held 5 s: clearing Wi-Fi settings, restarting into setup");
             g_cfg.wifi_ssid[0] = 0; g_cfg.wifi_pass[0] = 0; g_cfg.wifi_verified = false;
             settings_save();
             esp_restart();
@@ -128,7 +142,7 @@ static void unverified_wifi_watchdog(void *arg)
 {
     for (int i = 0; i < 90 && !g_cfg.wifi_verified; i++) vTaskDelay(pdMS_TO_TICKS(1000));
     if (!g_cfg.wifi_verified) {
-        ESP_LOGE(TAG, "new Wi-Fi settings never connected: clearing them, restarting into setup");
+        evlog_event("new Wi-Fi settings never connected: clearing them, restarting into setup");
         g_cfg.wifi_ssid[0] = 0; g_cfg.wifi_pass[0] = 0;
         settings_save();
         esp_restart();
@@ -167,6 +181,27 @@ static void web_boot_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// Feeds the device page (address, signal, memory...). Cheap, so it runs every few seconds.
+static void update_device_info(void)
+{
+    ui_device_info_t d = {0};
+    esp_netif_ip_info_t ip;
+    esp_netif_t *nif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    wifi_ap_record_t ap;
+    if (wifi_is_connected() && nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK) {
+        d.wifi_up = true;
+        snprintf(d.ip, sizeof d.ip, IPSTR, IP2STR(&ip.ip));
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) { strlcpy(d.ssid, (const char *)ap.ssid, sizeof d.ssid); d.rssi = ap.rssi; }
+    }
+    strlcpy(d.host, "deco-optimizer.local", sizeof d.host);
+    d.mqtt_enabled = g_cfg.mqtt_user[0] != 0;
+    d.mqtt_connected = mqtt_is_connected();
+    d.uptime_s = (uint32_t)(esp_timer_get_time() / 1000000);
+    d.free_kb = esp_get_free_heap_size() / 1024;
+    strlcpy(d.version, esp_app_get_description()->version, sizeof d.version);
+    ui_set_device_info(&d);
+}
+
 static void scheduler_task(void *arg)
 {
     time_t next = 0;
@@ -174,9 +209,10 @@ static void scheduler_task(void *arg)
     for (;;) {
         if (mqtt_is_connected()) s_last_net_ok_us = esp_timer_get_time();
         if (!s_busy && esp_timer_get_time() - s_last_net_ok_us > (int64_t)NET_DEAD_REBOOT_S * 1000000) {
-            ESP_LOGE(TAG, "no network contact for %d s, rebooting", NET_DEAD_REBOOT_S);
+            evlog_event("no network contact for %d s: self-heal reboot", NET_DEAD_REBOOT_S);
             esp_restart();
         }
+        update_device_info();
         time_t now = time(NULL);
         if (now > 1700000000 && g_cfg.sched_en) {     // clock is set and the schedule is enabled
             if (!next) { next = next_schedule(now); set_next(next); ESP_LOGI(TAG, "next scheduled run at %lld", (long long)next); }
@@ -186,12 +222,26 @@ static void scheduler_task(void *arg)
                 set_next(next);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(15000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
+static const char *reset_reason_str(esp_reset_reason_t r)
+{
+    switch (r) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_SW: return "software restart";
+    case ESP_RST_PANIC: return "PANIC";
+    case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: return "WATCHDOG";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";
+    case ESP_RST_USB: return "USB reset";
+    default: return "other";
     }
 }
 
 void app_main(void)
 {
+    evlog_init();           // capture everything from here on into the RAM log
     // With CONFIG_NVS_ENCRYPTION + HMAC scheme this also derives the encryption keys; on the very first
     // boot it generates the HMAC key inside the chip and burns it to eFuse (one-time, irreversible).
     esp_err_t e = nvs_flash_init();
@@ -202,10 +252,11 @@ void app_main(void)
     }
     if (e != ESP_OK) { ESP_LOGE(TAG, "nvs_flash_init failed: %s", esp_err_to_name(e)); abort(); }
     settings_load();
+    evlog_event("boot: %s, firmware %s", reset_reason_str(esp_reset_reason()), esp_app_get_description()->version);
     setenv("TZ", DECO_TZ, 1); tzset();
     display_init();
 #if CONFIG_DECO_RESET_BUTTON_GPIO >= 0
-    xTaskCreate(boot_button_task, "boot_btn", 2048, NULL, 3, NULL);
+    xTaskCreate(boot_button_task, "boot_btn", 3072, NULL, 3, NULL);
 #endif
     if (!settings_wifi_configured()) {      // first run, or BOOT-hold recovery
         provision_start();
@@ -220,7 +271,7 @@ void app_main(void)
 
     s_cmds = xQueueCreate(4, sizeof(cmd_t));
     wifi_start();
-    if (!g_cfg.wifi_verified) xTaskCreate(unverified_wifi_watchdog, "wifi_wd", 3072, NULL, 3, NULL);
+    if (!g_cfg.wifi_verified) xTaskCreate(unverified_wifi_watchdog, "wifi_wd", 4096, NULL, 3, NULL);
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     esp_netif_sntp_init(&sntp);
     xTaskCreate(mqtt_boot_task, "mqtt_boot", 3072, NULL, 4, NULL);
@@ -228,5 +279,5 @@ void app_main(void)
     xTaskCreate(startup_scan_task, "startup_scan", 3072, NULL, 4, NULL);
     if (have_last) mqtt_publish_result(&last, "");   // seed state from the stored history; sent once connected
     xTaskCreate(worker_task, "deco", 16384, NULL, 5, NULL);
-    xTaskCreate(scheduler_task, "sched", 3072, NULL, 4, NULL);
+    xTaskCreate(scheduler_task, "sched", 4096, NULL, 4, NULL);
 }

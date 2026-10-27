@@ -18,6 +18,7 @@ void ui_set_result(deco_verdict_t v, uint32_t ts, uint32_t duration_s, const cha
 void ui_set_mode(bool optimize) {}
 void ui_set_next_run(uint32_t ts) {}
 void ui_refresh_history(void) {}
+void ui_set_device_info(const ui_device_info_t *info) {}
 
 void ui_show_setup(const char *ap_ssid, const char *ap_pass)
 {
