@@ -34,7 +34,7 @@
 
 static const char *TAG = "app";
 
-typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP, CMD_FETCH_NODES } cmd_t;
+typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP, CMD_RUN_REPORT, CMD_FETCH_NODES } cmd_t;
 static QueueHandle_t s_cmds;
 static volatile bool s_busy;
 #define NET_DEAD_REBOOT_S 600          // see scheduler_task: last-resort self-heal
@@ -72,8 +72,8 @@ static void worker_task(void *arg)
         if (c == CMD_FETCH_NODES) { deco_nodes_fetch(); continue; }     // once per boot, before the first SSH run
         if (s_busy) continue;
         s_busy = true; app_busy_set(true);
-        screensaver_wake();                // a run (scheduled, manual, web or MQTT) lights the screen
-        bool optimize = (c == CMD_RUN_STARTUP) ? false : g_cfg.optimize;   // a reboot must never optimise
+        if (c != CMD_RUN_REPORT) screensaver_wake();   // a run (scheduled, manual, web or MQTT) lights the screen; the in-between reports do not
+        bool optimize = (c == CMD_RUN_STARTUP || c == CMD_RUN_REPORT) ? false : g_cfg.optimize;   // a reboot or an in-between report must never optimise
         progress("checking wifi");
         wifi_check_link();      // moves off a mesh node that is not passing traffic
         deco_result_t r;
@@ -86,11 +86,11 @@ static void worker_task(void *arg)
         }
         time_t now = time(NULL);
         hist_entry_t e = {.ts = now > 1700000000 ? (uint32_t)now : 0, .duration_s = r.duration_s > 65535 ? 65535 : r.duration_s,
-                          .verdict = r.verdict, .flags = (optimize ? 1 : 0) | (c == CMD_RUN_SCHEDULED ? 2 : 0) | (c == CMD_RUN_STARTUP ? 4 : 0)};
+                          .verdict = r.verdict, .flags = (optimize ? 1 : 0) | ((c == CMD_RUN_SCHEDULED || c == CMD_RUN_REPORT) ? 2 : 0) | (c == CMD_RUN_STARTUP ? 4 : 0)};
         if (r.verdict != DECO_ERROR) s_last_net_ok_us = esp_timer_get_time();
         // One persistent line per run, with the reason and where it stopped, so a failure can be read afterwards.
         evlog_event("run %s/%s: %s%s%s (%us, %d attempt%s%s%s%s)", optimize ? "optimise" : "report",
-                    c == CMD_RUN_SCHEDULED ? "schedule" : c == CMD_RUN_STARTUP ? "startup" : "manual",
+                    c == CMD_RUN_SCHEDULED ? "schedule" : c == CMD_RUN_REPORT ? "interval" : c == CMD_RUN_STARTUP ? "startup" : "manual",
                     r.verdict == DECO_ERROR ? "ERROR" : deco_verdict_str(r.verdict),
                     r.detail[0] ? ": " : "", r.detail, (unsigned)r.duration_s, attempts, attempts == 1 ? "" : "s",
                     r.verdict == DECO_ERROR ? ", last step '" : "", r.verdict == DECO_ERROR ? s_phase : "",
@@ -98,7 +98,7 @@ static void worker_task(void *arg)
         history_add(&e);
         app_state_set(r.verdict == DECO_ERROR ? "error" : deco_verdict_str(r.verdict));
         ui_set_result(r.verdict, e.ts, r.duration_s, r.detail);
-        screensaver_wake();                // keep the result on screen for a full timeout
+        if (c != CMD_RUN_REPORT) screensaver_wake();   // keep the result on screen for a full timeout
         mqtt_publish_result(&e, r.detail);
         ESP_LOGI(TAG, "[heap] free=%u min=%u largest=%u", (unsigned)esp_get_free_heap_size(), (unsigned)esp_get_minimum_free_heap_size(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         s_busy = false; app_busy_set(false);
@@ -113,6 +113,24 @@ static time_t next_schedule(time_t from)
     time_t t = mktime(&tm);
     if (t <= from) { tm.tm_mday++; tm.tm_isdst = -1; t = mktime(&tm); }
     return t;
+}
+
+// Next report-only slot after 'from': the daily time plus whole multiples of the interval (the interval divides 24, so the
+// daily run is one of the slots). The daily run's own slot is left out, because that run is the one that may optimise.
+static time_t next_report(time_t from)
+{
+    int n = g_cfg.report_every_h;
+    if (n <= 0) return 0;
+    struct tm base; localtime_r(&from, &base);
+    time_t best = 0;
+    for (int k = -24 / n; k <= 48 / n; k++) {
+        if ((k * n) % 24 == 0) continue;
+        struct tm tm = base;
+        tm.tm_hour = g_cfg.sched_h + k * n; tm.tm_min = g_cfg.sched_m; tm.tm_sec = 0; tm.tm_isdst = -1;
+        time_t t = mktime(&tm);
+        if (t > from && (!best || t < best)) best = t;
+    }
+    return best;
 }
 
 // Holding BOOT (GPIO9) for 5 s while running clears the Wi-Fi details and restarts into setup mode.
@@ -221,7 +239,8 @@ static void update_device_info(void)
 
 static void scheduler_task(void *arg)
 {
-    time_t next = 0;
+    time_t next = 0, next_rep = 0;
+    uint32_t last_key = 0;
     s_last_net_ok_us = esp_timer_get_time();
     for (;;) {
         if (mqtt_is_connected()) s_last_net_ok_us = esp_timer_get_time();
@@ -232,11 +251,23 @@ static void scheduler_task(void *arg)
         update_device_info();
         time_t now = time(NULL);
         if (now > 1700000000 && g_cfg.sched_en) {     // clock is set and the schedule is enabled
-            if (!next) { next = next_schedule(now); set_next(next); ESP_LOGI(TAG, "next scheduled run at %lld", (long long)next); }
+            uint32_t key = g_cfg.sched_h << 16 | g_cfg.sched_m << 8 | g_cfg.report_every_h;
+            if (!next || key != last_key) {           // first time, or the schedule was edited on the web page
+                last_key = key;
+                next = next_schedule(now);
+                next_rep = next_report(now);
+                ESP_LOGI(TAG, "next scheduled run at %lld, next report at %lld", (long long)next, (long long)next_rep);
+                set_next(next_rep && next_rep < next ? next_rep : next);
+            }
             if (now >= next) {
                 cmd_t c = CMD_RUN_SCHEDULED; xQueueSend(s_cmds, &c, 0);
                 next = next_schedule(now + 60);
-                set_next(next);
+                next_rep = next_report(now + 60);
+                set_next(next_rep && next_rep < next ? next_rep : next);
+            } else if (next_rep && now >= next_rep) {
+                cmd_t c = CMD_RUN_REPORT; xQueueSend(s_cmds, &c, 0);
+                next_rep = next_report(now + 60);
+                set_next(next_rep && next_rep < next ? next_rep : next);
             }
         }
         vTaskDelay(pdMS_TO_TICKS(5000));

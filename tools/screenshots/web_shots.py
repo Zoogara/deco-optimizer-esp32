@@ -33,7 +33,7 @@ def status(scn):
             "history": [{"ts": a, "v": b, "dur": c, "flags": d} for a, b, c, d in hist]}
 
 CONFIG = {"wifi_ssid": "HomeMesh", "deco_host": "192.168.1.1", "deco_email": "user@example.com",
-          "mqtt_uri": "mqtt://homeassistant.local:1883", "mqtt_user": "deco", "sched_en": True, "sched_h": 3, "sched_m": 0,
+          "mqtt_uri": "mqtt://homeassistant.local:1883", "mqtt_user": "deco", "sched_en": True, "sched_h": 3, "sched_m": 0, "report_every_h": 4,
           "wifi_pass_set": True, "deco_pass_set": True, "mqtt_pass_set": True, "hostkey_set": True,
           "hostkey": "0a:1b:2c:3d:4e:5f:60:71:82:93:a4:b5:c6:d7:e8:f9:0a:1b:2c:3d"}
 
@@ -135,7 +135,7 @@ def crop(src, dst, y0, y1=None):
     im = Image.open(os.path.join(OUT, src + ".png"))
     im.crop((0, y0, im.width, min(im.height, y1) if y1 else im.height)).save(os.path.join(OUT, dst + ".png"))
     print("wrote", dst + ".png")
-SPLIT = 1936      # between the Schedule and Deco sections, at 2x scale
+SPLIT = 2150      # between the Schedule and Deco sections, at 2x scale
 for theme in ("dark", "light"):
     crop("web_idle_" + theme, "web_page_top_" + theme, 0, SPLIT)
     crop("web_idle_" + theme, "web_page_settings_" + theme, SPLIT)

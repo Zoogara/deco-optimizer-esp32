@@ -183,6 +183,7 @@ static esp_err_t h_config_get(httpd_req_t *r)
     cJSON_AddBoolToObject(o, "sched_en", g_cfg.sched_en);
     cJSON_AddNumberToObject(o, "sched_h", g_cfg.sched_h);
     cJSON_AddNumberToObject(o, "sched_m", g_cfg.sched_m);
+    cJSON_AddNumberToObject(o, "report_every_h", g_cfg.report_every_h);
     // secrets are never sent back, only whether they are set
     cJSON_AddBoolToObject(o, "wifi_pass_set", g_cfg.wifi_pass[0] != 0);
     cJSON_AddBoolToObject(o, "deco_pass_set", g_cfg.deco_pass[0] != 0);
@@ -228,6 +229,10 @@ static esp_err_t h_config_post(httpd_req_t *r)
     if (cJSON_IsBool(v = cJSON_GetObjectItem(j, "sched_en"))) { g_cfg.sched_en = cJSON_IsTrue(v); changed = true; }
     if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "sched_h")) && v->valueint >= 0 && v->valueint < 24) { g_cfg.sched_h = v->valueint; changed = true; }
     if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "sched_m")) && v->valueint >= 0 && v->valueint < 60) { g_cfg.sched_m = v->valueint; changed = true; }
+    if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "report_every_h"))) {
+        int n = v->valueint;
+        if (n == 0 || (n > 0 && n <= 12 && 24 % n == 0)) { g_cfg.report_every_h = n; changed = true; }   // whole divisors of 24 only
+    }
     bool want_restart = cJSON_IsTrue(cJSON_GetObjectItem(j, "restart"));
     cJSON_Delete(j);
 

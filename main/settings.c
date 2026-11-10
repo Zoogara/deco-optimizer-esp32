@@ -1,5 +1,6 @@
 #include "settings.h"
 #include <string.h>
+#include <stddef.h>
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -7,6 +8,10 @@
 
 #define SETTINGS_MAGIC 0xDEC00002u
 static const char *TAG = "settings";
+// The blob before report_every_h was added. It is still accepted (the new field then takes its default), so an
+// update does not discard the Wi-Fi details and secrets. New fields must only ever be added at the end.
+#define SETTINGS_LEN_V2 536
+_Static_assert(offsetof(settings_t, report_every_h) == SETTINGS_LEN_V2, "settings layout changed: keep new fields at the end");
 
 settings_t g_cfg;
 
@@ -26,9 +31,10 @@ void settings_load(void)
     size_t len = sizeof g_cfg;
     static settings_t tmp;
     if (nvs_open("cfg", NVS_READONLY, &h) == ESP_OK) {
+        memset(&tmp, 0, sizeof tmp);
         esp_err_t e = nvs_get_blob(h, "all", &tmp, &len);
         nvs_close(h);
-        if (e == ESP_OK && len == sizeof tmp && tmp.magic == SETTINGS_MAGIC) {
+        if (e == ESP_OK && (len == sizeof tmp || len == SETTINGS_LEN_V2) && tmp.magic == SETTINGS_MAGIC) {
             g_cfg = tmp;
             ESP_LOGI(TAG, "loaded from encrypted NVS");
             return;

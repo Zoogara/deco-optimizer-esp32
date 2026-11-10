@@ -21,6 +21,7 @@ typedef struct {
     bool sched_en;
     uint8_t sched_h, sched_m;
     bool wifi_verified;      // false right after setup until the first successful connect
+    uint8_t report_every_h;  // 0 = off; else 1,2,3,4,6,8 or 12: a report-only scan every N hours, in step with the daily run
 } settings_t;
 
 extern settings_t g_cfg;
