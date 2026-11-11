@@ -22,6 +22,7 @@
 #include "deco.h"
 #include "evlog.h"
 #include "deco_nodes.h"
+#include "pings.h"
 
 static const char *TAG = "web";
 static web_callbacks_t s_cb;
@@ -184,6 +185,17 @@ static esp_err_t h_config_get(httpd_req_t *r)
     cJSON_AddNumberToObject(o, "sched_h", g_cfg.sched_h);
     cJSON_AddNumberToObject(o, "sched_m", g_cfg.sched_m);
     cJSON_AddNumberToObject(o, "report_every_h", g_cfg.report_every_h);
+    cJSON_AddNumberToObject(o, "ping_every_min", g_cfg.ping_every_min);
+    cJSON_AddNumberToObject(o, "ping_size", g_cfg.ping_size ? g_cfg.ping_size : 1000);
+    cJSON *pd = cJSON_AddArrayToObject(o, "ping_devs");
+    for (int i = 0; i < PING_MAX_DEV; i++) {
+        cJSON *d = cJSON_CreateObject();
+        char ip[16] = "";
+        if (g_cfg.ping_dev[i].ip) { esp_ip4_addr_t a = {.addr = g_cfg.ping_dev[i].ip}; snprintf(ip, sizeof ip, IPSTR, IP2STR(&a)); }
+        cJSON_AddStringToObject(d, "label", g_cfg.ping_dev[i].label);
+        cJSON_AddStringToObject(d, "ip", ip);
+        cJSON_AddItemToArray(pd, d);
+    }
     // secrets are never sent back, only whether they are set
     cJSON_AddBoolToObject(o, "wifi_pass_set", g_cfg.wifi_pass[0] != 0);
     cJSON_AddBoolToObject(o, "deco_pass_set", g_cfg.deco_pass[0] != 0);
@@ -233,6 +245,29 @@ static esp_err_t h_config_post(httpd_req_t *r)
         int n = v->valueint;
         if (n == 0 || (n > 0 && n <= 12 && 24 % n == 0)) { g_cfg.report_every_h = n; changed = true; }   // whole divisors of 24 only
     }
+    bool ping_changed = false;
+    ping_dev_t old_devs[PING_MAX_DEV];
+    memcpy(old_devs, g_cfg.ping_dev, sizeof old_devs);
+    if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "ping_every_min"))) {
+        int n = v->valueint;
+        if (n == 0 || (n >= 5 && n <= 60 && 60 % n == 0)) { g_cfg.ping_every_min = n; changed = ping_changed = true; }
+    }
+    if (cJSON_IsNumber(v = cJSON_GetObjectItem(j, "ping_size")) && v->valueint >= 32 && v->valueint <= 1400) { g_cfg.ping_size = v->valueint; changed = true; }
+    cJSON *pds = cJSON_GetObjectItem(j, "ping_devs");
+    if (cJSON_IsArray(pds)) {                      // the whole list: slots not given are cleared
+        for (int i = 0; i < PING_MAX_DEV; i++) {
+            cJSON *d = cJSON_GetArrayItem(pds, i);
+            cJSON *l = cJSON_GetObjectItem(d, "label"), *a = cJSON_GetObjectItem(d, "ip");
+            memset(&g_cfg.ping_dev[i], 0, sizeof g_cfg.ping_dev[i]);
+            esp_ip4_addr_t ip = {0};
+            if (cJSON_IsString(a) && a->valuestring[0] && esp_netif_str_to_ip4(a->valuestring, &ip) != ESP_OK) ip.addr = 0;
+            g_cfg.ping_dev[i].ip = ip.addr;
+            if (ip.addr && cJSON_IsString(l))      // the label ends up in JSON and MQTT, so keep it plain
+                for (const char *c = l->valuestring, *e = c + strlen(c); c < e && strlen(g_cfg.ping_dev[i].label) < sizeof g_cfg.ping_dev[i].label - 1; c++)
+                    if ((unsigned char)*c >= 0x20 && *c != '"' && *c != '\\' && *c != '<' && *c != '>') g_cfg.ping_dev[i].label[strlen(g_cfg.ping_dev[i].label)] = *c;
+        }
+        changed = ping_changed = true;
+    }
     bool want_restart = cJSON_IsTrue(cJSON_GetObjectItem(j, "restart"));
     cJSON_Delete(j);
 
@@ -241,6 +276,7 @@ static esp_err_t h_config_post(httpd_req_t *r)
     cJSON_AddBoolToObject(o, "ok", true);
     cJSON_AddBoolToObject(o, "restart_needed", restart && !want_restart);
     esp_err_t e = send_json(r, o);
+    if (ping_changed) mqtt_ping_discovery_refresh(old_devs);
     if (want_restart || (restart && want_restart)) xTaskCreate(restart_later, "restart", 2048, NULL, 5, NULL);
     return e;
 }
@@ -294,6 +330,46 @@ static esp_err_t h_events(httpd_req_t *r)
 }
 
 // Everything the firmware logged recently (RAM ring buffer; empty after a restart).
+// The ping history, streamed (it is about 20 KB, too much to build in memory).
+// {"step":min,"series":[names, "" = unused],"rounds":[{"t":ts,"n":"node, only when it changed","s":[[avg,min,lost] or null,...]}]}
+static esp_err_t h_pings(httpd_req_t *r)
+{
+    if (!authorised(r)) return ESP_OK;
+    httpd_resp_set_type(r, "application/json");
+    httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+    char b[600];
+    int n = snprintf(b, sizeof b, "{\"step\":%d,\"count\":%d,\"series\":[\"Gateway\",\"Connected node\"", g_cfg.ping_every_min, PING_COUNT_DEV);
+    for (int i = 0; i < PING_MAX_DEV; i++)
+        n += snprintf(b + n, sizeof b - n, ",\"%s\"", g_cfg.ping_dev[i].ip ? (g_cfg.ping_dev[i].label[0] ? g_cfg.ping_dev[i].label : "device") : "");
+    n += snprintf(b + n, sizeof b - n, "],\"rounds\":[");
+    httpd_resp_send_chunk(r, b, n);
+    uint8_t last[6] = {0};
+    for (int i = 0; i < pings_count(); i++) {
+        ping_round_t pr;
+        if (!pings_get(i, &pr)) break;
+        n = snprintf(b, sizeof b, "%s{\"t\":%u", i ? "," : "", (unsigned)pr.ts);
+        if (memcmp(last, pr.bssid, 6)) {
+            char nm[56];
+            deco_node_label(pr.bssid, nm, sizeof nm);
+            if (!nm[0]) snprintf(nm, sizeof nm, "%02x:%02x:%02x:%02x:%02x:%02x", pr.bssid[0], pr.bssid[1], pr.bssid[2], pr.bssid[3], pr.bssid[4], pr.bssid[5]);
+            for (char *c = nm; *c; c++) if (*c == '"' || *c == '\\' || (unsigned char)*c < 0x20) *c = '_';   // a Deco name is user text
+            n += snprintf(b + n, sizeof b - n, ",\"n\":\"%s\"", nm);
+            memcpy(last, pr.bssid, 6);
+        }
+        n += snprintf(b + n, sizeof b - n, ",\"s\":[");
+        for (int k = 0; k < PING_SERIES; k++) {
+            const ping_s_t *s = &pr.s[k];
+            if (!s->sent) n += snprintf(b + n, sizeof b - n, "%snull", k ? "," : "");
+            else if (s->lost >= s->sent) n += snprintf(b + n, sizeof b - n, "%s[null,null,%u]", k ? "," : "", s->lost);
+            else n += snprintf(b + n, sizeof b - n, "%s[%u,%u,%u]", k ? "," : "", s->avg, s->min, s->lost);
+        }
+        n += snprintf(b + n, sizeof b - n, "]}");
+        if (httpd_resp_send_chunk(r, b, n) != ESP_OK) return ESP_FAIL;
+    }
+    httpd_resp_send_chunk(r, "]}", 2);
+    return httpd_resp_send_chunk(r, NULL, 0);
+}
+
 static esp_err_t h_log(httpd_req_t *r)
 {
     if (!authorised(r)) return ESP_OK;
@@ -349,7 +425,7 @@ void web_start(const web_callbacks_t *cb)
     hc.stack_size = 7168;
     hc.max_open_sockets = 3;      // sockets are shared with SSH, MQTT and ping
     hc.lru_purge_enable = true;
-    hc.max_uri_handlers = 12;
+    hc.max_uri_handlers = 14;
     httpd_handle_t srv;
     if (httpd_start(&srv, &hc) != ESP_OK) { ESP_LOGE(TAG, "http server failed to start"); return; }
     static const httpd_uri_t uris[] = {
@@ -364,6 +440,7 @@ void web_start(const web_callbacks_t *cb)
         {.uri = "/api/erase", .method = HTTP_POST, .handler = h_erase},
         {.uri = "/api/events", .method = HTTP_GET, .handler = h_events},
         {.uri = "/api/log", .method = HTTP_GET, .handler = h_log},
+        {.uri = "/api/pings", .method = HTTP_GET, .handler = h_pings},
     };
     for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++) httpd_register_uri_handler(srv, &uris[i]);
     ESP_LOGI(TAG, "web page up: http://deco-optimizer.local/");

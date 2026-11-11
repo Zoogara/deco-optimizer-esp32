@@ -33,7 +33,8 @@ def status(scn):
             "history": [{"ts": a, "v": b, "dur": c, "flags": d} for a, b, c, d in hist]}
 
 CONFIG = {"wifi_ssid": "HomeMesh", "deco_host": "192.168.1.1", "deco_email": "user@example.com",
-          "mqtt_uri": "mqtt://homeassistant.local:1883", "mqtt_user": "deco", "sched_en": True, "sched_h": 3, "sched_m": 0, "report_every_h": 4,
+          "mqtt_uri": "mqtt://homeassistant.local:1883", "mqtt_user": "deco", "sched_en": True, "sched_h": 3, "sched_m": 0, "report_every_h": 4, "ping_every_min": 5, "ping_size": 1000,
+          "ping_devs": [{"label": l, "ip": i} for l, i in [("Kitchen plug", "192.168.1.61"), ("Garage cam", "192.168.1.62"), ("Weather stn", "192.168.1.63"), ("Pool pump", "192.168.1.64"), ("", ""), ("", ""), ("", "")]],
           "wifi_pass_set": True, "deco_pass_set": True, "mqtt_pass_set": True, "hostkey_set": True,
           "hostkey": "0a:1b:2c:3d:4e:5f:60:71:82:93:a4:b5:c6:d7:e8:f9:0a:1b:2c:3d"}
 
@@ -60,6 +61,31 @@ I (61931) evlog: event: run report/schedule: optimal (10s, 1 attempt)
 I (61940) app: [heap] free=120296 min=29120 largest=77824
 """
 
+def pings():
+    """12 hours of invented ping rounds: a quiet gateway, a node, four devices, a node change and a busy spell."""
+    import random, math
+    rnd = random.Random(7)
+    names = ["Gateway", "Connected node", "Kitchen plug", "Garage cam", "Weather stn", "Pool pump", "", "", ""]
+    end = ts(14, 15, 0)
+    rounds = []
+    for k in range(144):
+        t = end - (143 - k) * 300
+        busy = 70 <= k <= 95                      # an invented noisy spell
+        r = {"t": t}
+        if k == 0: r["n"] = "Study (M5)"
+        if k == 100: r["n"] = "Landing Room (M5)"
+        sr = []
+        for i in range(9):
+            if not names[i]: sr.append(None); continue
+            base = [3, 4, 9, 14, 22, 11][i]
+            v = base + rnd.random() * base * 0.4 + (rnd.random() * base * (4 if busy else 0.6) if rnd.random() < (0.5 if busy else 0.1) else 0)
+            if i >= 2: v += 6 * math.sin(k / 9 + i)
+            lost = 5 if rnd.random() < (0.04 if i >= 4 else 0.0) else (1 if busy and rnd.random() < 0.15 else 0)
+            sr.append([None, None, 5] if lost == 5 else [max(1, round(v)), max(1, round(v * 0.6)), lost])
+        r["s"] = sr
+        rounds.append(r)
+    return {"step": 5, "count": 5, "series": names, "rounds": rounds}
+
 class H(http.server.BaseHTTPRequestHandler):
     scenario, dark = "idle", True
     def log_message(self, *a): pass
@@ -71,6 +97,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/status": return self._send(json.dumps(status(H.scenario)), "application/json")
         if self.path == "/api/config": return self._send(json.dumps(CONFIG), "application/json")
         if self.path == "/api/events": return self._send(json.dumps([{"ts": a, "up": b, "text": c} for a, b, c in EVENTS]), "application/json")
+        if self.path == "/api/pings": return self._send(json.dumps(pings()), "application/json")
         if self.path == "/api/log": return self._send(LOG, "text/plain")
         if self.path == "/setup": return self._send(setup_page(), "text/html")
         html = open(os.path.join(ROOT, "main/web/index.html")).read()
@@ -135,10 +162,12 @@ def crop(src, dst, y0, y1=None):
     im = Image.open(os.path.join(OUT, src + ".png"))
     im.crop((0, y0, im.width, min(im.height, y1) if y1 else im.height)).save(os.path.join(OUT, dst + ".png"))
     print("wrote", dst + ".png")
-SPLIT = 2150      # between the Schedule and Deco sections, at 2x scale
+SPLIT = 2150      # between the Schedule and Ping monitor sections, at 2x scale
+SPLIT2 = 4120     # between the Ping monitor and Deco sections
 for theme in ("dark", "light"):
     crop("web_idle_" + theme, "web_page_top_" + theme, 0, SPLIT)
-    crop("web_idle_" + theme, "web_page_settings_" + theme, SPLIT)
+    crop("web_idle_" + theme, "web_page_pings_" + theme, SPLIT, SPLIT2)
+    crop("web_idle_" + theme, "web_page_settings_" + theme, SPLIT2)
 crop("web_running_dark", "web_status_running_dark", 0, 880)
 crop("web_error_dark", "web_status_error_dark", 0, 880)
 srv.shutdown()

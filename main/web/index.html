@@ -15,7 +15,7 @@ label{display:block;margin:10px 0 3px;color:var(--dim);font-size:.85em}
 input[type=text],input[type=password],input[type=time],select{width:100%;padding:9px;font-size:1em;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
 .sw{display:flex;align-items:center;gap:8px;margin:8px 0}.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:.92em}
 .kv span:nth-child(odd){color:var(--dim)}table{width:100%;border-collapse:collapse;font-size:.92em}td{padding:5px 4px;border-top:1px solid var(--line)}
-.msg{margin-top:10px;font-size:.9em}details{margin:8px 0}summary{cursor:pointer;color:var(--tx)}pre{margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font:12px ui-monospace,Menlo,monospace;max-height:340px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px}.danger{border-color:var(--bad)}.danger h2{color:var(--bad)}button.bad{background:var(--bad);color:#fff}pre::-webkit-scrollbar{height:12px;width:12px}pre::-webkit-scrollbar-track{background:var(--bg)}pre::-webkit-scrollbar-thumb{background:var(--dim);border-radius:6px;border:2px solid var(--bg)}@supports not selector(::-webkit-scrollbar){pre{scrollbar-color:var(--dim) var(--bg);scrollbar-width:auto}}pre.nw{white-space:pre;word-break:normal}code{font-size:.85em;word-break:break-all}
+.msg{margin-top:10px;font-size:.9em}details{margin:8px 0}summary{cursor:pointer;color:var(--tx)}pre{margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font:12px ui-monospace,Menlo,monospace;max-height:340px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:8px}.danger{border-color:var(--bad)}.danger h2{color:var(--bad)}button.bad{background:var(--bad);color:#fff}pre::-webkit-scrollbar{height:12px;width:12px}pre::-webkit-scrollbar-track{background:var(--bg)}pre::-webkit-scrollbar-thumb{background:var(--dim);border-radius:6px;border:2px solid var(--bg)}@supports not selector(::-webkit-scrollbar){pre{scrollbar-color:var(--dim) var(--bg);scrollbar-width:auto}}canvas{width:100%;height:220px;display:block}.leg{display:flex;flex-wrap:wrap;gap:4px 14px;margin:8px 0 0;font-size:.85em}.leg label{display:inline-flex;align-items:center;gap:5px;margin:0;color:var(--tx);cursor:pointer}.leg i{width:12px;height:3px;border-radius:2px;display:inline-block}.pdev{display:grid;grid-template-columns:1fr 1.2fr;gap:8px;margin-bottom:6px}input[type=number]{width:100%;padding:9px;font-size:1em;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}pre.nw{white-space:pre;word-break:normal}code{font-size:.85em;word-break:break-all}
 </style></head><body><main>
 <h1>Deco Optimizer</h1>
 <section><h2>Status</h2>
@@ -32,6 +32,16 @@ input[type=text],input[type=password],input[type=time],select{width:100%;padding
  <select id=rep_h><option value=0>never</option><option value=12>every 12 hours</option><option value=8>every 8 hours</option><option value=6>every 6 hours</option><option value=4>every 4 hours</option><option value=3>every 3 hours</option><option value=2>every 2 hours</option><option value=1>every hour</option></select>
  <div class="dim msg">These scans only report and never change the mesh. They run at whole intervals from the time above, so the daily run is always one of them.</div>
  <div class=row style="margin-top:12px"><button id=save_sched>Save schedule</button></div><div class=msg id=m_sched></div></section>
+<section><h2>Ping monitor</h2>
+ <div class=dim style="margin-bottom:6px">Round-trip times to the gateway, the Deco node this device is on, and up to 7 devices (the last 12 hours; Home Assistant keeps the long-term history).</div>
+ <div class=chartbox><canvas id=pch></canvas><div id=pleg class=leg></div><div id=pnote class="dim msg"></div></div>
+ <label>Ping every</label>
+ <select id=ping_min><option value=0>never</option><option value=5>5 minutes</option><option value=10>10 minutes</option><option value=15>15 minutes</option><option value=20>20 minutes</option><option value=30>30 minutes</option><option value=60>hour</option></select>
+ <label>Packet size (bytes, 32-1400)</label><input type=number id=ping_size min=32 max=1400>
+ <label>Devices to ping <span class=dim>(name, then the fixed IP address of a 2.4 GHz device)</span></label>
+ <div id=pdevs></div>
+ <div class=row style="margin-top:12px"><button id=save_ping>Save ping settings</button></div><div class=msg id=m_ping></div>
+ <div class="dim msg">The name is what Home Assistant keeps the history under: change a device's address and the same sensor carries on; rename it and you get a new sensor (the old one is removed). Give every device a different name. Each round sends 5 pings to every address. The scans have priority: a round is skipped if a scan is running or about to start. The device you ping is reached through this device's own Wi-Fi link, so the gateway line shows how much of any delay is this device's own link.</div></section>
 <section><h2>Deco</h2>
  <label>Deco address</label><input type=text id=deco_host autocapitalize=none>
  <label>TP-Link account email</label><input type=text id=deco_email autocapitalize=none>
@@ -84,7 +94,9 @@ async function refresh(){try{const s=await api('/api/status');
  $('hist').innerHTML=s.history.map(x=>`<tr><td>${fmt(x.ts)}</td><td class=${cls(x.v)}>${x.v}</td><td>${x.dur}s</td><td class=dim>${x.flags&1?'optimise':'report'}${x.flags&4?' · startup':x.flags&2?' · schedule':''}</td></tr>`).join('')||'<tr><td class=dim>no runs yet</td></tr>'}catch(e){}}
 async function loadCfg(){const c=await api('/api/config');
  for(const k of['deco_host','deco_email','mqtt_uri','mqtt_user','wifi_ssid'])$(k).value=c[k]||'';
- $('rep_h').value=c.report_every_h||0;$('sched_en').checked=c.sched_en;$('sched_t').value=String(c.sched_h).padStart(2,'0')+':'+String(c.sched_m).padStart(2,'0');
+ $('rep_h').value=c.report_every_h||0;$('ping_min').value=c.ping_every_min||0;$('ping_size').value=c.ping_size||1000;
+ $('pdevs').innerHTML=(c.ping_devs||[]).map((d,i)=>`<div class=pdev><input type=text id=pl${i} placeholder="Name" maxlength=15 value="${(d.label||'').replace(/"/g,'')}"><input type=text id=pi${i} placeholder="192.168.1.x" inputmode=decimal value="${d.ip||''}"></div>`).join('');
+ $('sched_en').checked=c.sched_en;$('sched_t').value=String(c.sched_h).padStart(2,'0')+':'+String(c.sched_m).padStart(2,'0');
  for(const k of['deco_pass','mqtt_pass','wifi_pass'])$(k).placeholder=c[k+'_set']?'(set - leave empty to keep)':'(not set)';
  $('hostkey').textContent=c.hostkey_set?c.hostkey:'not pinned yet - will pin on the next connection'}
 async function save(msgid,body,restart){try{say(msgid,'saving...');const r=await api('/api/config',Object.assign(body,restart?{restart:true}:{}));
@@ -92,6 +104,7 @@ async function save(msgid,body,restart){try{say(msgid,'saving...');const r=await
  if(restart)setTimeout(()=>location.reload(),20000);else loadCfg()}catch(e){say(msgid,'Failed: '+(e.message||e),'bad')}}
 $('run').onclick=async()=>{await api('/api/run',{});setTimeout(refresh,400)};
 $('opt').onchange=async e=>{await api('/api/mode',{optimize:e.target.checked});refresh()};
+$('save_ping').onclick=()=>{const devs=[];for(let i=0;i<7;i++){const ip=$('pi'+i).value.trim();if(ip&&!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)){say('m_ping','device '+(i+1)+': not an IPv4 address');return}devs.push({label:$('pl'+i).value.trim(),ip})}save('m_ping',{ping_every_min:+$('ping_min').value,ping_size:+$('ping_size').value,ping_devs:devs}).then(()=>setTimeout(loadPings,300))};
 $('save_sched').onclick=()=>{const[t1,t2]=$('sched_t').value.split(':');save('m_sched',{sched_en:$('sched_en').checked,sched_h:+t1,sched_m:+t2,report_every_h:+$('rep_h').value})};
 $('save_deco').onclick=()=>save('m_deco',{deco_host:$('deco_host').value.trim(),deco_email:$('deco_email').value.trim(),deco_pass:$('deco_pass').value}).then(()=>$('deco_pass').value='');
 $('repin').onclick=async()=>{if(confirm('Trust whatever SSH host key the Deco presents next time?')){await api('/api/repin',{});say('m_deco','Will re-pin on the next connection.','ok');loadCfg()}};
@@ -109,5 +122,27 @@ function setWrap(){const w=$('wrap').checked;$('evtxt').classList.toggle('nw',!w
 try{if(localStorage.getItem('logwrap')==='0')$('wrap').checked=false}catch(e){}
 $('wrap').onchange=setWrap;setWrap();
 $('lgd').addEventListener('toggle',()=>{if($('lgd').open)loadLog()});$('lgref').onclick=loadLog;
-loadCfg();refresh();loadEvents();setInterval(refresh,3000);setInterval(()=>{if($('evd').open)loadEvents()},15000);
+
+let PD=null;const PCOL=['#8a8f98','#34c759','#0a84ff','#ff9f0a','#bf5af2','#ff453a','#64d2ff','#ffd60a','#ac8e68'],PHIDE={};
+async function loadPings(){try{PD=await api('/api/pings');drawPings()}catch(e){$('pnote').textContent='could not load the ping history'}}
+function drawPings(){if(!PD)return;const cv=$('pch'),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
+ const st=getComputedStyle(document.documentElement),tx=st.getPropertyValue('--tx').trim()||'#888',dim=st.getPropertyValue('--dim').trim()||'#888',line=st.getPropertyValue('--line').trim()||'#444';
+ const R=PD.rounds,step=(PD.step||5)*60,names=PD.series;
+ $('pnote').textContent=!PD.step?'Ping monitoring is off. Pick an interval below and save.':R.length?'':'No rounds yet: the first one runs at the next interval mark.';
+ const vis=names.map((n,i)=>n&&R.some(r=>r.s[i]));
+ $('pleg').innerHTML=names.map((n,i)=>{if(!n)return'';const last=[...R].reverse().find(r=>r.s[i]),v=last?(last.s[i][0]==null?'no reply':last.s[i][0]+' ms'):'';return`<label><input type=checkbox data-i=${i} ${PHIDE[i]?'':'checked'}><i style="background:${PCOL[i]}"></i>${n} <span class=dim>${v}</span></label>`}).join('');
+ $('pleg').querySelectorAll('input').forEach(c=>c.onchange=()=>{PHIDE[c.dataset.i]=!c.checked;drawPings()});
+ const L=34,Rr=6,T=22,B=22,w=W-L-Rr,h=H-T-B;g.font='11px system-ui,sans-serif';
+ let mx=10;R.forEach(r=>r.s.forEach((s,i)=>{if(s&&s[0]!=null&&!PHIDE[i])mx=Math.max(mx,s[0])}));mx=mx<=20?Math.ceil(mx/5)*5:mx<=100?Math.ceil(mx/20)*20:Math.ceil(mx/100)*100;
+ const t0=R.length?R[0].t:0,t1=R.length?R[R.length-1].t+step/2:1,X=t=>L+(t1>t0?(t-t0)/(t1-t0)*w:0),Y=v=>T+h-v/mx*h;
+ g.strokeStyle=line;g.fillStyle=dim;g.lineWidth=1;g.textAlign='right';
+ for(let k=0;k<=4;k++){const v=mx*k/4,y=Y(v);g.beginPath();g.moveTo(L,y);g.lineTo(W-Rr,y);g.stroke();g.fillText(Math.round(v),L-5,y+4)}
+ g.textAlign='center';if(R.length&&R[0].t){const n=Math.max(2,Math.floor(w/90));for(let k=0;k<=n;k++){const t=t0+(t1-t0)*k/n,d=new Date(t*1000);g.fillText(d.toTimeString().slice(0,5),Math.max(16,Math.min(W-16,X(t))),H-6)}}
+ R.forEach((r,j)=>{if(r.n&&j>0){g.setLineDash([3,3]);g.strokeStyle=dim;g.beginPath();g.moveTo(X(r.t),T);g.lineTo(X(r.t),T+h);g.stroke();g.setLineDash([]);g.save();g.fillStyle=dim;g.textAlign='left';g.fillText(r.n,Math.min(X(r.t)+3,W-90),T+9);g.restore()}});
+ names.forEach((n,i)=>{if(!n||PHIDE[i]||!vis[i])return;g.strokeStyle=PCOL[i];g.fillStyle=PCOL[i];g.lineWidth=1.8;let pen=false,pt=0;g.beginPath();
+  R.forEach(r=>{const s=r.s[i];if(!s)return;if(s[0]==null){pen=false;g.fillRect(X(r.t)-2,T+h-4,4,4);return}
+   const x=X(r.t),y=Y(s[0]);if(pen&&r.t-pt<=step*1.5)g.lineTo(x,y);else g.moveTo(x,y);pen=true;pt=r.t});g.stroke();
+  R.forEach(r=>{const s=r.s[i];if(s&&s[0]!=null&&s[2]>0){g.beginPath();g.arc(X(r.t),Y(s[0]),3,0,7);g.fill()}})});
+ g.fillStyle=dim;g.textAlign='left';g.fillText('ms',2,11)}
+loadCfg();refresh();loadEvents();loadPings();setInterval(loadPings,60000);window.addEventListener('resize',drawPings);setInterval(refresh,3000);setInterval(()=>{if($('evd').open)loadEvents()},15000);
 </script></main></body></html>

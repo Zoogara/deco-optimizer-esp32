@@ -21,6 +21,9 @@ Python reference implementation are in [Zoogara/deco-network-optimize](https://g
   change the mesh and do not wake the screen. A report-only scan always runs once after boot, and a reboot never optimises.
 - Screensaver: after 5 minutes without a touch the screen shows a short burst of "snow" and the backlight turns off. A touch wakes it (that touch is
   not passed on to the buttons underneath), and so does every scan or optimise run, scheduled or not. Set `CONFIG_DECO_SCREENSAVER_TIMEOUT_S` to change the time, or `0` to disable.
+- Ping monitor: every 5 to 60 minutes it pings the gateway, the Deco node it is connected to, and up to seven devices of your choice (fixed IPs, with a
+  name each) using large packets, on its own schedule and never during a scan. The web page charts the last 12 hours; every round is also published to Home Assistant,
+  which keeps the long-term history. It shows how a busy or interfered 2.4 GHz band looks from a client's side between scans.
 - Home Assistant MQTT discovery (state, last/next scan, optimise switch, run button), with availability.
 - Knows which Deco node it is connected to (name and model, e.g. "via Study (M5)"), shown on the device page and the web page. The node list is read once per
   boot from the Deco's local web interface and matched against the BSSID the board is joined to.
@@ -51,7 +54,11 @@ The web page (dark and light follow the browser):
 <td><img src="docs/screenshots/web_page_top_light.png" width="420" alt="Web page: status, connection, history, schedule (light)"></td>
 </tr></table>
 
-Settings (below the schedule on the same page). Passwords are write-only: the fields show "set" and are never filled in.
+The ping monitor (settings and the last 12 hours, below the schedule; the data here is invented):
+
+<img src="docs/screenshots/web_page_pings_dark.png" width="420" alt="Web page: ping monitor chart and settings">
+
+Settings (below that on the same page). Passwords are write-only: the fields show "set" and are never filled in.
 
 <img src="docs/screenshots/web_page_settings_dark.png" width="420" alt="Web page settings: Deco, MQTT, Wi-Fi, security and the erase section">
 
@@ -95,8 +102,9 @@ With MQTT configured, one device, **Deco Optimizer**, appears through MQTT disco
 | Last scan, Next scheduled scan (sensors) | Timestamps. |
 | Optimise mode (switch) | Off = report only. |
 | Run scan now (button) | Starts a run in the current mode. |
+| Ping gateway, Ping connected node, Ping *name* (sensors) | With the ping monitor on: the average round-trip time in ms of the last round, with `min` and `loss` (%) as attributes. One sensor per device, **identified by the name you give it** (not its address or slot), so its history carries on if the device's address changes. No reply shows as unknown. Renaming a device makes a new sensor and removes the old one. |
 
-Topics are under `deco_optimizer/<id>/` (`state`, `attributes`, `last_run`, `next_run`, `mode`, `availability`; commands on `mode/set` with `ON`/`OFF` and `run/set` with `PRESS`),
+Topics are under `deco_optimizer/<id>/` (`state`, `attributes`, `last_run`, `next_run`, `mode`, `ping`, `availability`; commands on `mode/set` with `ON`/`OFF` and `run/set` with `PRESS`),
 where `<id>` is the last three bytes of the MAC address in hex. Availability uses a retained last-will message, so entities show "unavailable" if the device drops off MQTT, which also
 happens briefly during a Deco scan (the scan disturbs Wi-Fi clients, this device included).
 

@@ -132,38 +132,51 @@ void wifi_kick(void)
 typedef struct { uint8_t bssid[6]; int64_t until_us; } avoid_t;
 static avoid_t s_avoid[AVOID_SLOTS];
 
-typedef struct { SemaphoreHandle_t done; uint32_t replies, total_ms; } ping_result_t;
+typedef struct { SemaphoreHandle_t done; uint32_t replies, total_ms, min_ms; } ping_result_t;
 
 static void on_ping_success(esp_ping_handle_t hdl, void *args)
 {
     ping_result_t *r = args; uint32_t gap = 0;
     esp_ping_get_profile(hdl, ESP_PING_PROF_TIMEGAP, &gap, sizeof gap);
+    if (!r->replies || gap < r->min_ms) r->min_ms = gap;
     r->replies++; r->total_ms += gap;
 }
 static void on_ping_end(esp_ping_handle_t hdl, void *args) { xSemaphoreGive(((ping_result_t *)args)->done); }
 
-static bool ping_gateway(uint32_t *avg_ms, uint32_t *lost)
+uint32_t wifi_gateway_ip(void)
 {
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
     esp_netif_ip_info_t ip;
-    if (!netif || esp_netif_get_ip_info(netif, &ip) != ESP_OK || ip.gw.addr == 0) return false;
+    if (!netif || esp_netif_get_ip_info(netif, &ip) != ESP_OK) return 0;
+    return ip.gw.addr;
+}
+
+bool wifi_ping(uint32_t addr, int count, int size, uint32_t *avg_ms, uint32_t *min_ms, uint32_t *lost)
+{
+    if (!addr) return false;
     ping_result_t r = {.done = xSemaphoreCreateBinary()};
     if (!r.done) return false;
     esp_ping_config_t pc = ESP_PING_DEFAULT_CONFIG();
-    pc.count = PING_COUNT; pc.interval_ms = 200; pc.timeout_ms = 1000; pc.data_size = 32;
+    pc.count = count; pc.interval_ms = 200; pc.timeout_ms = 1000; pc.data_size = size;
     pc.target_addr.type = IPADDR_TYPE_V4;
-    pc.target_addr.u_addr.ip4.addr = ip.gw.addr;
+    pc.target_addr.u_addr.ip4.addr = addr;
     esp_ping_callbacks_t cbs = {.cb_args = &r, .on_ping_success = on_ping_success, .on_ping_end = on_ping_end};
     esp_ping_handle_t ping;
     if (esp_ping_new_session(&pc, &cbs, &ping) != ESP_OK) { vSemaphoreDelete(r.done); return false; }
     esp_ping_start(ping);
-    xSemaphoreTake(r.done, pdMS_TO_TICKS(PING_COUNT * 1500 + 2000));
+    xSemaphoreTake(r.done, pdMS_TO_TICKS(count * 1500 + 2000));
     esp_ping_stop(ping);
     esp_ping_delete_session(ping);
     vSemaphoreDelete(r.done);
-    *lost = PING_COUNT - r.replies;
+    *lost = count - r.replies;
     *avg_ms = r.replies ? r.total_ms / r.replies : 0;
+    if (min_ms) *min_ms = r.replies ? r.min_ms : 0;
     return true;
+}
+
+static bool ping_gateway(uint32_t *avg_ms, uint32_t *lost)
+{
+    return wifi_ping(wifi_gateway_ip(), PING_COUNT, 32, avg_ms, NULL, lost);
 }
 
 static bool avoided(const uint8_t *bssid, int64_t now)

@@ -18,6 +18,7 @@
 #include "wifi.h"
 #include "deco.h"
 #include "deco_nodes.h"
+#include "pings.h"
 #include "history.h"
 #include "ui.h"
 #include "mqtt.h"
@@ -34,7 +35,7 @@
 
 static const char *TAG = "app";
 
-typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP, CMD_RUN_REPORT, CMD_FETCH_NODES } cmd_t;
+typedef enum { CMD_RUN_MANUAL, CMD_RUN_SCHEDULED, CMD_RUN_STARTUP, CMD_RUN_REPORT, CMD_FETCH_NODES, CMD_PING } cmd_t;
 static QueueHandle_t s_cmds;
 static volatile bool s_busy;
 #define NET_DEAD_REBOOT_S 600          // see scheduler_task: last-resort self-heal
@@ -70,6 +71,7 @@ static void worker_task(void *arg)
     for (;;) {
         if (xQueueReceive(s_cmds, &c, portMAX_DELAY) != pdTRUE) continue;
         if (c == CMD_FETCH_NODES) { deco_nodes_fetch(); continue; }     // once per boot, before the first SSH run
+        if (c == CMD_PING) { pings_round(); continue; }                 // the worker does one thing at a time, so never during a scan
         if (s_busy) continue;
         s_busy = true; app_busy_set(true);
         if (c != CMD_RUN_REPORT) screensaver_wake();   // a run (scheduled, manual, web or MQTT) lights the screen; the in-between reports do not
@@ -239,7 +241,7 @@ static void update_device_info(void)
 
 static void scheduler_task(void *arg)
 {
-    time_t next = 0, next_rep = 0;
+    time_t next = 0, next_rep = 0, next_ping = 0;
     uint32_t last_key = 0;
     s_last_net_ok_us = esp_timer_get_time();
     for (;;) {
@@ -269,6 +271,18 @@ static void scheduler_task(void *arg)
                 next_rep = next_report(now + 60);
                 set_next(next_rep && next_rep < next ? next_rep : next);
             }
+        }
+        if (now > 1700000000 && g_cfg.ping_every_min) {   // ping rounds, on the clock (whole multiples of the interval)
+            time_t step = g_cfg.ping_every_min * 60;
+            if (!next_ping || next_ping - now > step) next_ping = (now / step + 1) * step;     // first time, or the interval was edited
+            if (now >= next_ping) {
+                // Leave this slot out if a scan is running or about to start; the scan has priority.
+                bool soon = g_cfg.sched_en && ((next > now && next - now < 90) || (next_rep > now && next_rep - now < 90));
+                if (!s_busy && !soon) { cmd_t c = CMD_PING; xQueueSend(s_cmds, &c, 0); }
+                next_ping = (now / step + 1) * step;
+            }
+        } else {
+            next_ping = 0;
         }
         vTaskDelay(pdMS_TO_TICKS(5000));
     }

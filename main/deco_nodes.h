@@ -14,6 +14,7 @@ typedef struct {
     uint8_t mac[6];
     uint8_t bssid_2g[6];    // the node's radios: these are what a client's BSSID is matched against
     uint8_t bssid_5g[6];
+    char ip[16];            // the node's own address, dotted ("" if the Deco did not give one)
 } deco_node_t;
 
 // Best effort; logs what happened and changes nothing else. Blocking (a few seconds). Call from the worker task only.

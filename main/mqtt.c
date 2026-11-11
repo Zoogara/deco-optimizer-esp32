@@ -7,6 +7,7 @@
 #include "mqtt_client.h"
 #include "deco.h"
 #include "settings.h"
+#include "pings.h"
 
 static const char *TAG = "mqtt";
 static esp_mqtt_client_handle_t s_client;
@@ -64,6 +65,91 @@ static void publish_discovery(void)
     discovery("button", "run_scan", "Run scan now", e);
 }
 
+// One sensor per ping target (gateway, connected node, each device in the settings): the state is the average round-trip
+// time in ms, with min and loss as attributes. A device's sensor is identified by its NAME, not its slot or address, so
+// Home Assistant keeps one history for "Garage cam" whatever address it has later. An unnamed device falls back to its slot.
+static void raw_slug(const char *label, char *out, size_t n)       // "Garage cam" -> "garage_cam"
+{
+    size_t k = 0;
+    for (const char *c = label; *c && k < n - 1; c++) {
+        char ch = (*c >= 'A' && *c <= 'Z') ? *c + 32 : *c;
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) out[k++] = ch;
+        else if (k && out[k - 1] != '_') out[k++] = '_';
+    }
+    while (k && out[k - 1] == '_') k--;
+    out[k] = 0;
+}
+
+static void dev_slug(const ping_dev_t *d, int i, char *out, size_t n)
+{
+    char s[20], t[20];
+    raw_slug(d[i].label, s, sizeof s);
+    bool dup = false;
+    for (int j = 0; j < i && !dup; j++) if (d[j].ip) { raw_slug(d[j].label, t, sizeof t); dup = !strcmp(s, t); }
+    if (!s[0] || dup) snprintf(out, n, "d%d", i + 1); else snprintf(out, n, "%s", s);
+}
+
+static void remove_ping_sensor(const char *slug)
+{
+    char topic[112];
+    snprintf(topic, sizeof topic, "homeassistant/sensor/%s/ping_%s/config", s_id, slug);
+    esp_mqtt_client_enqueue(s_client, topic, "", 0, 1, true, true);
+}
+
+static void publish_ping_discovery(const ping_dev_t *old)
+{
+    static const char *const key[PING_SERIES] = {"gw", "node", "d1", "d2", "d3", "d4", "d5", "d6", "d7"};
+    char slug[PING_SERIES][20];
+    strcpy(slug[0], "gateway"); strcpy(slug[1], "node");
+    for (int i = 0; i < PING_MAX_DEV; i++) dev_slug(g_cfg.ping_dev, i, slug[2 + i], sizeof slug[0]);
+    if (old) {                                          // sensors of devices that were renamed or removed
+        for (int i = 0; i < PING_MAX_DEV; i++) {
+            if (!old[i].ip) continue;
+            char os[20];
+            dev_slug(old, i, os, sizeof os);
+            bool kept = false;
+            for (int k = 0; k < PING_MAX_DEV; k++) if (g_cfg.ping_every_min && g_cfg.ping_dev[k].ip && !strcmp(slug[2 + k], os)) kept = true;
+            if (!kept) remove_ping_sensor(os);
+        }
+    }
+    for (int i = 0; i < PING_SERIES; i++) {
+        bool on = g_cfg.ping_every_min && (i < 2 || g_cfg.ping_dev[i - 2].ip);
+        if (!on) {
+            if (i < 2) remove_ping_sensor(slug[i]);
+            else { char fb[8]; snprintf(fb, sizeof fb, "d%d", i - 1); remove_ping_sensor(fb); }
+            continue;
+        }
+        char obj[32], name[40], e[420];
+        snprintf(obj, sizeof obj, "ping_%s", slug[i]);
+        if (i == 0) strcpy(name, "Ping gateway");
+        else if (i == 1) strcpy(name, "Ping connected node");
+        else if (g_cfg.ping_dev[i - 2].label[0]) snprintf(name, sizeof name, "Ping %s", g_cfg.ping_dev[i - 2].label);
+        else snprintf(name, sizeof name, "Ping device %d", i - 1);
+        snprintf(e, sizeof e,
+                 "\"state_topic\":\"%s/ping\",\"value_template\":\"{{ value_json.%s.avg }}\",\"unit_of_measurement\":\"ms\","
+                 "\"state_class\":\"measurement\",\"json_attributes_topic\":\"%s/ping\",\"json_attributes_template\":\"{{ value_json.%s | tojson }}\","
+                 "\"icon\":\"mdi:lan-pending\"", s_base, key[i], s_base, key[i]);
+        discovery("sensor", obj, name, e);
+    }
+}
+
+void mqtt_ping_discovery_refresh(const ping_dev_t *old) { if (s_client && s_connected) publish_ping_discovery(old); }
+
+void mqtt_publish_pings(const ping_round_t *r)
+{
+    static const char *const key[PING_SERIES] = {"gw", "node", "d1", "d2", "d3", "d4", "d5", "d6", "d7"};
+    char b[640]; int n = snprintf(b, sizeof b, "{");
+    for (int i = 0; i < PING_SERIES && n < (int)sizeof b - 80; i++) {
+        const ping_s_t *s = &r->s[i];
+        if (!s->sent) continue;
+        bool none = s->lost >= s->sent;
+        if (none) n += snprintf(b + n, sizeof b - n, "%s\"%s\":{\"avg\":null,\"min\":null,\"loss\":100}", n > 1 ? "," : "", key[i]);
+        else n += snprintf(b + n, sizeof b - n, "%s\"%s\":{\"avg\":%u,\"min\":%u,\"loss\":%u}", n > 1 ? "," : "", key[i], s->avg, s->min, s->lost * 100 / s->sent);
+    }
+    snprintf(b + n, sizeof b - n, "}");
+    pub("ping", b, false);
+}
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     esp_mqtt_event_handle_t ev = data;
@@ -73,6 +159,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         ESP_LOGI(TAG, "connected");
         pub("availability", "online", true);
         publish_discovery();
+        publish_ping_discovery(NULL);
         pub("state", s_state, true);
         pub("attributes", s_attr, true);
         pub("mode", s_mode, true);

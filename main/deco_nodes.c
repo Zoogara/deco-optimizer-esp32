@@ -108,8 +108,8 @@ static void save_cache(void)
 
 /* ---------- JSON scanner: picks fields out of the device_list objects as the bytes go past ---------- */
 
-enum { F_MODEL, F_ROLE, F_MAC, F_B2, F_B5, F_NICK, F_CUSTOM, F_COUNT };
-static const char *const FIELD_KEY[F_COUNT] = {"device_model", "role", "mac", "bssid_2g", "bssid_5g", "nickname", "custom_nickname"};
+enum { F_MODEL, F_ROLE, F_MAC, F_B2, F_B5, F_NICK, F_CUSTOM, F_IP, F_COUNT };
+static const char *const FIELD_KEY[F_COUNT] = {"device_model", "role", "mac", "bssid_2g", "bssid_5g", "nickname", "custom_nickname", "ip"};
 #define STR_MAX 72
 #define NODE_DEPTH 4        // {"result":{"device_list":[ {node} ... : the node objects open at depth 4
 
@@ -142,6 +142,7 @@ static void jx_finish_node(jx_t *j)
     memset(n, 0, sizeof *n);
     strlcpy(n->model, j->f[F_MODEL], sizeof n->model);
     strlcpy(n->role, j->f[F_ROLE], sizeof n->role);
+    strlcpy(n->ip, j->f[F_IP], sizeof n->ip);
     parse_mac(j->f[F_MAC], n->mac);
     parse_mac(j->f[F_B2], n->bssid_2g);
     parse_mac(j->f[F_B5], n->bssid_5g);

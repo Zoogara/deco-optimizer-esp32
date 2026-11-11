@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef struct { char label[16]; uint32_t ip; } ping_dev_t;     // ip in network byte order, 0 = slot unused
+
 typedef struct {
     uint32_t magic;          // SETTINGS_MAGIC | version
     char wifi_ssid[33];
@@ -22,6 +24,9 @@ typedef struct {
     uint8_t sched_h, sched_m;
     bool wifi_verified;      // false right after setup until the first successful connect
     uint8_t report_every_h;  // 0 = off; else 1,2,3,4,6,8 or 12: a report-only scan every N hours, in step with the daily run
+    uint8_t ping_every_min;  // 0 = off; else 5,10,15,20,30 or 60: ping the gateway, the connected node and the devices below
+    uint16_t ping_size;      // payload bytes per ping (0 = the default, 1000)
+    ping_dev_t ping_dev[7];
 } settings_t;
 
 extern settings_t g_cfg;
