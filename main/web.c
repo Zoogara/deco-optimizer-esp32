@@ -112,6 +112,16 @@ static void hex_fp(const uint8_t *fp, char *out)
 
 /* ---------- handlers ---------- */
 
+extern const uint8_t icon_png_start[] asm("_binary_icon_png_start");
+extern const uint8_t icon_png_end[] asm("_binary_icon_png_end");
+
+static esp_err_t h_icon(httpd_req_t *r)    // no login needed: browsers fetch icons without credentials
+{
+    httpd_resp_set_type(r, "image/png");
+    httpd_resp_set_hdr(r, "Cache-Control", "max-age=86400");
+    return httpd_resp_send(r, (const char *)icon_png_start, icon_png_end - icon_png_start);
+}
+
 static esp_err_t h_index(httpd_req_t *r)
 {
     if (!authorised(r)) return ESP_OK;
@@ -425,7 +435,7 @@ void web_start(const web_callbacks_t *cb)
     hc.stack_size = 7168;
     hc.max_open_sockets = 3;      // sockets are shared with SSH, MQTT and ping
     hc.lru_purge_enable = true;
-    hc.max_uri_handlers = 14;
+    hc.max_uri_handlers = 16;
     httpd_handle_t srv;
     if (httpd_start(&srv, &hc) != ESP_OK) { ESP_LOGE(TAG, "http server failed to start"); return; }
     static const httpd_uri_t uris[] = {
@@ -441,6 +451,9 @@ void web_start(const web_callbacks_t *cb)
         {.uri = "/api/events", .method = HTTP_GET, .handler = h_events},
         {.uri = "/api/log", .method = HTTP_GET, .handler = h_log},
         {.uri = "/api/pings", .method = HTTP_GET, .handler = h_pings},
+        {.uri = "/favicon.ico", .method = HTTP_GET, .handler = h_icon},
+        {.uri = "/apple-touch-icon.png", .method = HTTP_GET, .handler = h_icon},
+        {.uri = "/apple-touch-icon-precomposed.png", .method = HTTP_GET, .handler = h_icon},
     };
     for (size_t i = 0; i < sizeof uris / sizeof uris[0]; i++) httpd_register_uri_handler(srv, &uris[i]);
     ESP_LOGI(TAG, "web page up: http://deco-optimizer.local/");

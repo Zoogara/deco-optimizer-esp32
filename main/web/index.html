@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>Deco Optimizer</title>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Deco Optimizer</title><link rel=icon type=image/png href=/favicon.ico><link rel=apple-touch-icon href=/apple-touch-icon.png>
 <style>
 :root{--bg:#111;--card:#1b1b1b;--line:#333;--tx:#eee;--dim:#999;--ok:#4cc364;--warn:#f0b429;--bad:#ff6b6b;--acc:#2d7ff9}
 @media(prefers-color-scheme:light){:root{--bg:#f3f3f3;--card:#fff;--line:#ddd;--tx:#111;--dim:#666}}
@@ -128,7 +128,7 @@ async function loadPings(){try{PD=await api('/api/pings');drawPings()}catch(e){$
 function drawPings(){if(!PD)return;const cv=$('pch'),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
  const st=getComputedStyle(document.documentElement),tx=st.getPropertyValue('--tx').trim()||'#888',dim=st.getPropertyValue('--dim').trim()||'#888',line=st.getPropertyValue('--line').trim()||'#444';
  const R=PD.rounds,step=(PD.step||5)*60,names=PD.series;
- $('pnote').textContent=!PD.step?'Ping monitoring is off. Pick an interval below and save.':R.length?'':'No rounds yet: the first one runs at the next interval mark.';
+ $('pnote').textContent=!PD.step?'Ping monitoring is off. Pick an interval below and save.':R.length?(R.some((r,j)=>j>0&&r.t-R[j-1].t>step*1.5)?'Red bands: no rounds were taken (reboot, scan or Wi-Fi down). Check the Events log.':''):'No rounds yet: the first one runs at the next interval mark.';
  const vis=names.map((n,i)=>n&&R.some(r=>r.s[i]));
  $('pleg').innerHTML=names.map((n,i)=>{if(!n)return'';const last=[...R].reverse().find(r=>r.s[i]),v=last?(last.s[i][0]==null?'no reply':last.s[i][0]+' ms'):'';return`<label><input type=checkbox data-i=${i} ${PHIDE[i]?'':'checked'}><i style="background:${PCOL[i]}"></i>${n} <span class=dim>${v}</span></label>`}).join('');
  $('pleg').querySelectorAll('input').forEach(c=>c.onchange=()=>{PHIDE[c.dataset.i]=!c.checked;drawPings()});
@@ -138,6 +138,7 @@ function drawPings(){if(!PD)return;const cv=$('pch'),dpr=window.devicePixelRatio
  g.strokeStyle=line;g.fillStyle=dim;g.lineWidth=1;g.textAlign='right';
  for(let k=0;k<=4;k++){const v=mx*k/4,y=Y(v);g.beginPath();g.moveTo(L,y);g.lineTo(W-Rr,y);g.stroke();g.fillText(Math.round(v),L-5,y+4)}
  g.textAlign='center';if(R.length&&R[0].t){const n=Math.max(2,Math.floor(w/90));for(let k=0;k<=n;k++){const t=t0+(t1-t0)*k/n,d=new Date(t*1000);g.fillText(d.toTimeString().slice(0,5),Math.max(16,Math.min(W-16,X(t))),H-6)}}
+ g.save();g.fillStyle='rgba(224,80,80,.14)';R.forEach((r,j)=>{if(j>0&&r.t-R[j-1].t>step*1.5){const a=X(R[j-1].t),b=X(r.t);g.fillRect(a,T,b-a,h)}});g.restore();
  R.forEach((r,j)=>{if(r.n&&j>0){g.setLineDash([3,3]);g.strokeStyle=dim;g.beginPath();g.moveTo(X(r.t),T);g.lineTo(X(r.t),T+h);g.stroke();g.setLineDash([]);g.save();g.fillStyle=dim;g.textAlign='left';g.fillText(r.n,Math.min(X(r.t)+3,W-90),T+9);g.restore()}});
  names.forEach((n,i)=>{if(!n||PHIDE[i]||!vis[i])return;g.strokeStyle=PCOL[i];g.fillStyle=PCOL[i];g.lineWidth=1.8;let pen=false,pt=0;g.beginPath();
   R.forEach(r=>{const s=r.s[i];if(!s)return;if(s[0]==null){pen=false;g.fillRect(X(r.t)-2,T+h-4,4,4);return}

@@ -279,6 +279,7 @@ static void scheduler_task(void *arg)
                 // Leave this slot out if a scan is running or about to start; the scan has priority.
                 bool soon = g_cfg.sched_en && ((next > now && next - now < 90) || (next_rep > now && next_rep - now < 90));
                 if (!s_busy && !soon) { cmd_t c = CMD_PING; xQueueSend(s_cmds, &c, 0); }
+                else ESP_LOGI(TAG, "ping round skipped: %s", s_busy ? "a scan is running" : "a scan is about to start");
                 next_ping = (now / step + 1) * step;
             }
         } else {
