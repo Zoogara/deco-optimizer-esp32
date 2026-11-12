@@ -14,7 +14,9 @@ Python reference implementation are in [Zoogara/deco-network-optimize](https://g
 
 ## Features
 - Scan / optimize via SSH direct-tcpip to `127.0.0.1:20002` on the Deco (libssh2 on mbedTLS; the Deco's 512-bit RSA host key
-  is pinned on first use).
+  is pinned on first use). libssh2's session structure normally holds two 35 KB packet buffers (about 79 KB in one block),
+  too much contiguous heap for a chip without PSRAM, so `main/CMakeLists.txt` shrinks them (12 KB buffers, 8 KB packets) when
+  the project is configured; the structure is then about 34 KB.
 - Touch UI: status page, swipeable history, Run now, report-only / optimise switch.
 - Daily schedule (SNTP, POSIX timezone in `main/config.h`): one run a day at a set time that follows the Optimise mode switch, plus an optional
   report-only scan at a chosen interval through the rest of the day (every 1, 2, 3, 4, 6, 8 or 12 hours, counted from the daily time). The in-between scans never
