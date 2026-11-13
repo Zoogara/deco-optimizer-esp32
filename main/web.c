@@ -299,6 +299,16 @@ static esp_err_t h_run(httpd_req_t *r)
     return send_json(r, o);
 }
 
+static esp_err_t h_pingnow(httpd_req_t *r)
+{
+    if (!authorised(r)) return ESP_OK;
+    int rc = s_cb.on_ping_now ? s_cb.on_ping_now() : 2;
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddBoolToObject(o, "ok", rc == 0);
+    cJSON_AddStringToObject(o, "msg", rc == 0 ? "queued" : rc == 1 ? "a ping round is already waiting" : "ping monitoring is off");
+    return send_json(r, o);
+}
+
 static esp_err_t h_mode(httpd_req_t *r)
 {
     if (!authorised(r)) return ESP_OK;
@@ -435,7 +445,7 @@ void web_start(const web_callbacks_t *cb)
     hc.stack_size = 7168;
     hc.max_open_sockets = 3;      // sockets are shared with SSH, MQTT and ping
     hc.lru_purge_enable = true;
-    hc.max_uri_handlers = 16;
+    hc.max_uri_handlers = 17;
     httpd_handle_t srv;
     if (httpd_start(&srv, &hc) != ESP_OK) { ESP_LOGE(TAG, "http server failed to start"); return; }
     static const httpd_uri_t uris[] = {
@@ -444,6 +454,7 @@ void web_start(const web_callbacks_t *cb)
         {.uri = "/api/config", .method = HTTP_GET, .handler = h_config_get},
         {.uri = "/api/config", .method = HTTP_POST, .handler = h_config_post},
         {.uri = "/api/run", .method = HTTP_POST, .handler = h_run},
+        {.uri = "/api/pingnow", .method = HTTP_POST, .handler = h_pingnow},
         {.uri = "/api/mode", .method = HTTP_POST, .handler = h_mode},
         {.uri = "/api/repin", .method = HTTP_POST, .handler = h_repin},
         {.uri = "/api/reboot", .method = HTTP_POST, .handler = h_reboot},

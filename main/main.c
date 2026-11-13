@@ -42,6 +42,16 @@ static volatile bool s_busy;
 static volatile int64_t s_last_net_ok_us;
 
 static void on_run(void) { cmd_t c = CMD_RUN_MANUAL; xQueueSend(s_cmds, &c, 0); }
+static volatile bool s_ping_queued;
+static int on_ping_now(void)                  // "Ping now" on the web page; the worker runs it after any scan in progress
+{
+    if (!g_cfg.ping_every_min) return 2;
+    if (s_ping_queued) return 1;
+    cmd_t c = CMD_PING;
+    if (xQueueSend(s_cmds, &c, 0) != pdTRUE) return 1;
+    s_ping_queued = true;
+    return 0;
+}
 static void on_mode(bool opt)                 // from the touch UI
 {
     g_cfg.optimize = opt; settings_save(); mqtt_publish_mode(opt);
@@ -71,7 +81,7 @@ static void worker_task(void *arg)
     for (;;) {
         if (xQueueReceive(s_cmds, &c, portMAX_DELAY) != pdTRUE) continue;
         if (c == CMD_FETCH_NODES) { deco_nodes_fetch(); continue; }     // once per boot, before the first SSH run
-        if (c == CMD_PING) { pings_round(); continue; }                 // the worker does one thing at a time, so never during a scan
+        if (c == CMD_PING) { s_ping_queued = false; pings_round(); continue; }                 // the worker does one thing at a time, so never during a scan
         if (s_busy) continue;
         s_busy = true; app_busy_set(true);
         if (c != CMD_RUN_REPORT) screensaver_wake();   // a run (scheduled, manual, web or MQTT) lights the screen; the in-between reports do not
@@ -204,7 +214,7 @@ static void startup_scan_task(void *arg)
 static void web_boot_task(void *arg)
 {
     wifi_wait_connected(portMAX_DELAY);
-    static const web_callbacks_t wcb = {.on_run = on_run, .on_mode = on_mode_remote};
+    static const web_callbacks_t wcb = {.on_run = on_run, .on_mode = on_mode_remote, .on_ping_now = on_ping_now};
     web_start(&wcb);
     vTaskDelete(NULL);
 }
